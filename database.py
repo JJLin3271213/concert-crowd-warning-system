@@ -1,23 +1,33 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
 
-# 使用 SQLite 数据库（文件会自动创建在项目根目录）
-SQLALCHEMY_DATABASE_URL = "sqlite:///./concert.db"
+# 判断是否在 Railway 云端环境
+IS_PRODUCTION = os.environ.get("RAILWAY_ENVIRONMENT") == "production"
 
-# 创建数据库引擎
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False}  # SQLite 专用
-)
+if IS_PRODUCTION:
+    # 云端使用 /tmp 目录（可写临时目录）
+    SQLALCHEMY_DATABASE_URL = "sqlite:////tmp/concert.db"
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=30,
+        pool_pre_ping=True
+    )
+else:
+    # 本地开发
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./concert.db"
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
 
-# 创建会话工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# 创建基类（用于定义数据模型）
 Base = declarative_base()
 
-# 获取数据库会话（用于操作数据库）
 def get_db():
     db = SessionLocal()
     try:

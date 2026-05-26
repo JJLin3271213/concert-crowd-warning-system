@@ -19,6 +19,12 @@ def _save_alert_to_db(zone_id, zone_name, congestion_rate, current_count, capaci
     except Exception as e:
         print(f"保存预警记录失败: {e}")
 
+
+def _send_and_save(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name):
+    """后台线程：发送邮件 + 持久化预警记录"""
+    send_alert_email(zone_name, congestion_rate, current_count, capacity, venue_name)
+    _save_alert_to_db(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name)
+
 # 邮件配置
 SMTP_SERVER = "smtp.qq.com"
 SMTP_PORT = 587  # 改用 587 端口
@@ -102,12 +108,10 @@ def check_and_send_alert(zone_id, zone_name, congestion_rate, current_count, cap
                 return
 
         sent_alerts[alert_key] = now
-        # 持久化到数据库
-        _save_alert_to_db(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name)
-        # 邮件发送放到后台线程，不阻塞主请求
+        # 邮件发送放到后台线程（同时持久化预警记录）
         t = threading.Thread(
-            target=send_alert_email,
-            args=(zone_name, congestion_rate, current_count, capacity, venue_name),
+            target=_send_and_save,
+            args=(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name),
             daemon=True
         )
         t.start()

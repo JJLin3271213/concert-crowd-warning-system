@@ -46,7 +46,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-const API_URL = 'https://secureachievement.up.railway.app'
+import { API_URL } from '../config.js'
 const venues = ref([])
 const dialogVisible = ref(false)
 const dialogTitle = ref('添加场馆')
@@ -119,7 +119,7 @@ onMounted(() => {
 
 <style scoped>
 .manage-container {
-  background: white;
+  background: transparent;
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 20px;

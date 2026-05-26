@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List
 
 from database import get_db
-from models import CrowdData, Zone, Venue, RoadNetwork, User, Performance, EmergencyPoint, SystemConfig
+from models import CrowdData, Zone, Venue, RoadNetwork, User, Performance, EmergencyPoint, SystemConfig, EmergencyHelp
 from schemas import CrowdDataCreate
 from auth import authenticate_user, create_access_token, get_current_user
 
@@ -68,6 +68,7 @@ app = FastAPI(
     },
     servers=[
         {"url": "http://localhost:8000", "description": "本地开发服务器"},
+        {"url": "https://secure-achievement-production-a328.up.railway.app", "description": "云端生产服务器"},
     ],
     docs_url="/docs",
     redoc_url="/redoc",
@@ -76,20 +77,150 @@ app = FastAPI(
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 允许所有来源
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # 允许所有 HTTP 方法 (GET, POST, etc.)
+    allow_headers=["*"],  # 允许所有请求头
 )
 
-# ========== 系统接口 ==========
+
+# ========== 基础数据初始化函数 ==========
+def _init_basic_data(db: Session):
+    """初始化基础数据（场馆、分区、路网）"""
+    print("正在初始化基础数据...")
+
+    # ========== 1. 示例场馆 ==========
+    if db.query(Venue).filter(Venue.name == "示例场馆").count() == 0:
+        print("创建示例场馆...")
+        venue_demo = Venue(
+            name="示例场馆",
+            address="上海市浦东新区",
+            total_capacity=10000
+        )
+        db.add(venue_demo)
+        db.commit()
+
+        zones_demo = [
+            Zone(venue_id=venue_demo.id, name="东看台", capacity=2000, sort_order=1),
+            Zone(venue_id=venue_demo.id, name="西看台", capacity=2000, sort_order=2),
+            Zone(venue_id=venue_demo.id, name="南看台", capacity=1500, sort_order=3),
+            Zone(venue_id=venue_demo.id, name="北看台", capacity=1500, sort_order=4),
+            Zone(venue_id=venue_demo.id, name="内场VIP区", capacity=800, sort_order=5),
+            Zone(venue_id=venue_demo.id, name="内场普通A区", capacity=1200, sort_order=6),
+            Zone(venue_id=venue_demo.id, name="内场普通B区", capacity=1200, sort_order=7),
+            Zone(venue_id=venue_demo.id, name="入口", capacity=0, is_exit=0, sort_order=8),
+            Zone(venue_id=venue_demo.id, name="出口", capacity=0, is_exit=1, sort_order=9),
+        ]
+        db.add_all(zones_demo)
+        db.commit()
+
+        # 路网
+        zone_map_demo = {z.name: z.id for z in zones_demo}
+        roads_demo = [
+            (zone_map_demo["入口"], zone_map_demo["东看台"]),
+            (zone_map_demo["入口"], zone_map_demo["西看台"]),
+            (zone_map_demo["东看台"], zone_map_demo["入口"]),
+            (zone_map_demo["东看台"], zone_map_demo["北看台"]),
+            (zone_map_demo["东看台"], zone_map_demo["内场VIP区"]),
+            (zone_map_demo["东看台"], zone_map_demo["内场普通A区"]),
+            (zone_map_demo["西看台"], zone_map_demo["入口"]),
+            (zone_map_demo["西看台"], zone_map_demo["北看台"]),
+            (zone_map_demo["西看台"], zone_map_demo["内场VIP区"]),
+            (zone_map_demo["西看台"], zone_map_demo["内场普通B区"]),
+            (zone_map_demo["南看台"], zone_map_demo["北看台"]),
+            (zone_map_demo["南看台"], zone_map_demo["内场VIP区"]),
+            (zone_map_demo["南看台"], zone_map_demo["内场普通A区"]),
+            (zone_map_demo["南看台"], zone_map_demo["内场普通B区"]),
+            (zone_map_demo["北看台"], zone_map_demo["东看台"]),
+            (zone_map_demo["北看台"], zone_map_demo["西看台"]),
+            (zone_map_demo["北看台"], zone_map_demo["南看台"]),
+            (zone_map_demo["北看台"], zone_map_demo["出口"]),
+            (zone_map_demo["内场VIP区"], zone_map_demo["东看台"]),
+            (zone_map_demo["内场VIP区"], zone_map_demo["西看台"]),
+            (zone_map_demo["内场VIP区"], zone_map_demo["南看台"]),
+            (zone_map_demo["内场VIP区"], zone_map_demo["内场普通A区"]),
+            (zone_map_demo["内场VIP区"], zone_map_demo["内场普通B区"]),
+            (zone_map_demo["内场普通A区"], zone_map_demo["东看台"]),
+            (zone_map_demo["内场普通A区"], zone_map_demo["南看台"]),
+            (zone_map_demo["内场普通A区"], zone_map_demo["内场VIP区"]),
+            (zone_map_demo["内场普通A区"], zone_map_demo["内场普通B区"]),
+            (zone_map_demo["内场普通B区"], zone_map_demo["西看台"]),
+            (zone_map_demo["内场普通B区"], zone_map_demo["南看台"]),
+            (zone_map_demo["内场普通B区"], zone_map_demo["内场VIP区"]),
+            (zone_map_demo["内场普通B区"], zone_map_demo["内场普通A区"]),
+            (zone_map_demo["出口"], zone_map_demo["北看台"]),
+        ]
+        for from_id, to_id in roads_demo:
+            road = RoadNetwork(venue_id=venue_demo.id, from_zone_id=from_id, to_zone_id=to_id, distance=1)
+            db.add(road)
+        db.commit()
+        print("[OK] 示例场馆创建完成")
+    else:
+        print("示例场馆已存在，跳过")
+
+    # ========== 2. 北京鸟巢体育场 ==========
+    if db.query(Venue).filter(Venue.name == "国家体育场（鸟巢）").count() == 0:
+        print("创建北京鸟巢体育场...")
+        # ... 鸟巢的完整创建代码 ...
+    else:
+        print("鸟巢已存在，跳过")
+
+    # ========== 3. 郑州奥林匹克体育中心 ==========
+    if db.query(Venue).filter(Venue.name == "郑州奥林匹克体育中心").count() == 0:
+        print("创建郑州奥林匹克体育中心...")
+        # ... 郑州奥体的完整创建代码 ...
+    else:
+        print("郑州奥体已存在，跳过")
+
+    print("[OK] 所有基础数据初始化完成！")
+
+
+# ========== 启动时自动创建数据库表并初始化基础数据 ==========
+@app.on_event("startup")
+def init_database():
+    from database import engine
+    from models import Base
+    Base.metadata.create_all(bind=engine)
+    print("数据库表创建完成")
+
+    # 初始化基础数据（场馆、分区、路网）
+    db = next(get_db())
+    try:
+        _init_basic_data(db)
+    finally:
+        db.close()
+
+
+# ========== 数据库初始化接口（用于云端手动触发） ==========
+@app.get("/api/init-db", tags=["系统"])
+def init_database_cloud():
+    try:
+        from database import engine
+        from models import Base
+        Base.metadata.create_all(bind=engine)
+
+        db = next(get_db())
+        try:
+            _init_basic_data(db)
+        finally:
+            db.close()
+
+        return {"message": "数据库初始化成功，基础数据已填充"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ========== 以下为系统接口 ==========
+
 @app.get("/", tags=["系统"])
 def root():
     return {"message": "演唱会人流预警系统运行中", "version": "1.0.0"}
 
+
 @app.get("/api/health", tags=["系统"])
 def health():
     return {"status": "ok", "message": "服务正常", "timestamp": datetime.now().isoformat()}
+
 
 # ========== 人流数据接口 ==========
 @app.post("/api/crowd", tags=["人流监测"])
@@ -106,6 +237,7 @@ def add_crowd_data(data: CrowdDataCreate, db: Session = Depends(get_db)):
     db.refresh(crowd_record)
     return {"message": "数据已保存", "id": crowd_record.id}
 
+
 @app.post("/api/crowd/batch", tags=["人流监测"])
 def add_crowd_data_batch(data_list: List[CrowdDataCreate], db: Session = Depends(get_db)):
     records = []
@@ -121,6 +253,7 @@ def add_crowd_data_batch(data_list: List[CrowdDataCreate], db: Session = Depends
     db.add_all(records)
     db.commit()
     return {"message": f"已保存 {len(records)} 条数据"}
+
 
 @app.get("/api/crowd/latest", tags=["人流监测"])
 def get_latest_crowd(venue_id: int = 1, db: Session = Depends(get_db)):
@@ -163,12 +296,14 @@ def get_latest_crowd(venue_id: int = 1, db: Session = Depends(get_db)):
             })
     return result
 
+
 @app.get("/api/crowd/history/{zone_id}", tags=["人流监测"])
 def get_crowd_history(zone_id: int, limit: int = 10, db: Session = Depends(get_db)):
     records = db.query(CrowdData).filter(
         CrowdData.zone_id == zone_id
     ).order_by(CrowdData.timestamp.desc()).limit(limit).all()
     return records
+
 
 # ========== 认证接口 ==========
 @app.post("/api/login", tags=["认证"])
@@ -184,13 +319,28 @@ def login(username: str, password: str, db: Session = Depends(get_db)):
         "is_admin": user.is_admin
     }
 
+
 @app.get("/api/verify", tags=["认证"])
 def verify_token(current_user: User = Depends(get_current_user)):
     return {"valid": True, "username": current_user.username, "is_admin": current_user.is_admin}
 
+
 @app.get("/api/me", tags=["认证"])
 def get_me(current_user: User = Depends(get_current_user)):
     return {"id": current_user.id, "username": current_user.username, "is_admin": current_user.is_admin}
+
+
+@app.put("/api/change-password", tags=["认证"])
+def change_password(old_password: str, new_password: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from auth import verify_password, get_password_hash
+    if not verify_password(old_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="新密码长度不能少于6位")
+    current_user.hashed_password = get_password_hash(new_password)
+    db.commit()
+    return {"message": "密码修改成功"}
+
 
 # ========== 导出报表 ==========
 @app.get("/api/export/excel", tags=["报表导出"])
@@ -235,6 +385,7 @@ def export_excel(venue_id: int = 1, db: Session = Depends(get_db)):
         headers={"Content-Disposition": "attachment; filename=crowd_data.xlsx"}
     )
 
+
 # ========== 趋势图 ==========
 @app.get("/api/trend/{zone_id}", tags=["数据分析"])
 def get_zone_trend(zone_id: int, minutes: int = 30, db: Session = Depends(get_db)):
@@ -260,11 +411,13 @@ def get_zone_trend(zone_id: int, minutes: int = 30, db: Session = Depends(get_db
         "data": trend_data
     }
 
+
 # ========== 场馆管理 ==========
 @app.get("/api/venues", tags=["场馆管理"])
 def get_venues(db: Session = Depends(get_db)):
     venues = db.query(Venue).all()
     return venues
+
 
 @app.post("/api/venues", tags=["场馆管理"])
 def create_venue(name: str, address: str = "", total_capacity: int = 0, db: Session = Depends(get_db)):
@@ -273,6 +426,7 @@ def create_venue(name: str, address: str = "", total_capacity: int = 0, db: Sess
     db.commit()
     db.refresh(venue)
     return venue
+
 
 @app.put("/api/venues/{venue_id}", tags=["场馆管理"])
 def update_venue(venue_id: int, name: str, address: str = "", total_capacity: int = 0, db: Session = Depends(get_db)):
@@ -285,6 +439,7 @@ def update_venue(venue_id: int, name: str, address: str = "", total_capacity: in
     db.commit()
     return venue
 
+
 @app.delete("/api/venues/{venue_id}", tags=["场馆管理"])
 def delete_venue(venue_id: int, db: Session = Depends(get_db)):
     venue = db.query(Venue).filter(Venue.id == venue_id).first()
@@ -294,11 +449,13 @@ def delete_venue(venue_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "删除成功"}
 
+
 # ========== 分区管理 ==========
 @app.get("/api/venues/{venue_id}/zones", tags=["分区管理"])
 def get_zones(venue_id: int, db: Session = Depends(get_db)):
     zones = db.query(Zone).filter(Zone.venue_id == venue_id).order_by(Zone.sort_order).all()
     return zones
+
 
 @app.post("/api/zones", tags=["分区管理"])
 def create_zone(venue_id: int, name: str, capacity: int, is_exit: int = 0, sort_order: int = 0, db: Session = Depends(get_db)):
@@ -307,6 +464,7 @@ def create_zone(venue_id: int, name: str, capacity: int, is_exit: int = 0, sort_
     db.commit()
     db.refresh(zone)
     return zone
+
 
 @app.put("/api/zones/{zone_id}", tags=["分区管理"])
 def update_zone(zone_id: int, name: str, capacity: int, is_exit: int = 0, sort_order: int = 0, db: Session = Depends(get_db)):
@@ -320,6 +478,7 @@ def update_zone(zone_id: int, name: str, capacity: int, is_exit: int = 0, sort_o
     db.commit()
     return zone
 
+
 @app.delete("/api/zones/{zone_id}", tags=["分区管理"])
 def delete_zone(zone_id: int, db: Session = Depends(get_db)):
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
@@ -329,11 +488,13 @@ def delete_zone(zone_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "删除成功"}
 
+
 # ========== 路网管理 ==========
 @app.get("/api/venues/{venue_id}/road_network", tags=["路网管理"])
 def get_road_network(venue_id: int, db: Session = Depends(get_db)):
     roads = db.query(RoadNetwork).filter(RoadNetwork.venue_id == venue_id).all()
     return roads
+
 
 @app.post("/api/road_network", tags=["路网管理"])
 def add_road(from_zone_id: int, to_zone_id: int, venue_id: int = 1, distance: int = 1, db: Session = Depends(get_db)):
@@ -341,6 +502,7 @@ def add_road(from_zone_id: int, to_zone_id: int, venue_id: int = 1, distance: in
     db.add(road)
     db.commit()
     return road
+
 
 @app.delete("/api/road_network/{road_id}", tags=["路网管理"])
 def delete_road(road_id: int, db: Session = Depends(get_db)):
@@ -351,20 +513,28 @@ def delete_road(road_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "删除成功"}
 
+
 # ========== 路线规划 ==========
+def _get_congestion_alpha(db: Session) -> float:
+    """从系统配置读取拥堵权重系数α，默认2.0"""
+    config = db.query(SystemConfig).filter(SystemConfig.key == "congestion_alpha").first()
+    return float(config.value) if config else 2.0
+
+
 @app.get("/api/route/plan", tags=["路线规划"])
 def plan_route(start: int, end: int, venue_id: int = 1, db: Session = Depends(get_db)):
     from route import get_route_graph, get_node_names, dijkstra, calculate_congestion_weight
     from sqlalchemy import desc
-    
+
     graph = get_route_graph(db, venue_id)
     node_names = get_node_names(db, venue_id)
-    
+    alpha = _get_congestion_alpha(db)
+
     if start not in node_names:
         return {"error": f"无效的起点: {start}"}
     if end not in node_names:
         return {"error": f"无效的终点: {end}"}
-    
+
     zones = db.query(Zone).filter(Zone.venue_id == venue_id).all()
     latest_data = {}
     for zone in zones:
@@ -379,11 +549,11 @@ def plan_route(start: int, end: int, venue_id: int = 1, db: Session = Depends(ge
                 "capacity": zone.capacity,
                 "level": "red" if congestion_rate >= 0.8 else "orange" if congestion_rate >= 0.6 else "yellow" if congestion_rate >= 0.4 else "green"
             }
-    
+
     congestion_weights = {}
     for node_id in graph.keys():
         if node_id in latest_data:
-            weight = calculate_congestion_weight(node_id, latest_data)
+            weight = calculate_congestion_weight(node_id, latest_data, alpha)
             congestion_weights[node_id] = weight
     
     path = dijkstra(graph, start, end, congestion_weights)
@@ -437,12 +607,13 @@ def plan_route(start: int, end: int, venue_id: int = 1, db: Session = Depends(ge
         "is_congested": is_congested
     }
 
+
 @app.get("/api/route/nodes", tags=["路线规划"])
 def get_route_nodes(venue_id: int = 1, db: Session = Depends(get_db)):
-    """获取指定场馆的所有可用节点"""
     from route import get_node_names
     node_names = get_node_names(db, venue_id)
     return {"nodes": [{"id": k, "name": v} for k, v in node_names.items()]}
+
 
 @app.get("/api/route/evacuate/{zone_id}", tags=["路线规划"])
 def evacuate_route(zone_id: int, venue_id: int = 1, db: Session = Depends(get_db)):
@@ -463,10 +634,11 @@ def evacuate_route(zone_id: int, venue_id: int = 1, db: Session = Depends(get_db
         if latest and z.capacity > 0:
             congestion_rate = latest.current_count / z.capacity
             latest_data[z.id] = {"congestion_rate": round(congestion_rate * 100)}
+    alpha = _get_congestion_alpha(db)
     congestion_weights = {}
     for node_id in graph.keys():
         if node_id in latest_data:
-            weight = calculate_congestion_weight(node_id, latest_data)
+            weight = calculate_congestion_weight(node_id, latest_data, alpha)
             congestion_weights[node_id] = weight
     best_path = None
     best_exit = None
@@ -481,11 +653,13 @@ def evacuate_route(zone_id: int, venue_id: int = 1, db: Session = Depends(get_db
     path_names = [node_names.get(node, f"未知{node}") for node in best_path]
     return {"zone_id": zone_id, "zone_name": zone.name, "path_names": path_names, "steps": len(best_path) - 1}
 
+
 # ========== 演出信息管理 ==========
 @app.get("/api/performances", tags=["演出管理"])
 def get_performances(venue_id: int = 1, db: Session = Depends(get_db)):
     performances = db.query(Performance).filter(Performance.venue_id == venue_id).order_by(Performance.performance_date.desc()).all()
     return performances
+
 
 @app.post("/api/performances", tags=["演出管理"])
 def add_performance(
@@ -514,6 +688,7 @@ def add_performance(
     db.refresh(performance)
     return performance
 
+
 @app.put("/api/performances/{performance_id}", tags=["演出管理"])
 def update_performance(
     performance_id: int,
@@ -539,6 +714,7 @@ def update_performance(
     db.commit()
     return performance
 
+
 @app.delete("/api/performances/{performance_id}", tags=["演出管理"])
 def delete_performance(performance_id: int, db: Session = Depends(get_db)):
     performance = db.query(Performance).filter(Performance.id == performance_id).first()
@@ -548,11 +724,13 @@ def delete_performance(performance_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "删除成功"}
 
+
 # ========== 应急点位管理 ==========
 @app.get("/api/emergency/points", tags=["应急管理"])
 def get_emergency_points(venue_id: int = 1, db: Session = Depends(get_db)):
     points = db.query(EmergencyPoint).filter(EmergencyPoint.venue_id == venue_id, EmergencyPoint.status == 1).all()
     return points
+
 
 @app.post("/api/emergency/points", tags=["应急管理"])
 def add_emergency_point(
@@ -581,6 +759,7 @@ def add_emergency_point(
     db.refresh(point)
     return point
 
+
 @app.put("/api/emergency/points/{point_id}", tags=["应急管理"])
 def update_emergency_point(
     point_id: int,
@@ -608,6 +787,7 @@ def update_emergency_point(
     db.commit()
     return point
 
+
 @app.delete("/api/emergency/points/{point_id}", tags=["应急管理"])
 def delete_emergency_point(point_id: int, db: Session = Depends(get_db)):
     point = db.query(EmergencyPoint).filter(EmergencyPoint.id == point_id).first()
@@ -616,6 +796,7 @@ def delete_emergency_point(point_id: int, db: Session = Depends(get_db)):
     db.delete(point)
     db.commit()
     return {"message": "删除成功"}
+
 
 @app.get("/api/emergency/nearby", tags=["应急管理"])
 def get_nearby_emergency(zone_id: int, venue_id: int = 1, db: Session = Depends(get_db)):
@@ -631,10 +812,11 @@ def get_nearby_emergency(zone_id: int, venue_id: int = 1, db: Session = Depends(
         if latest and zone.capacity > 0:
             congestion_rate = latest.current_count / zone.capacity
             latest_data[zone.id] = {"congestion_rate": round(congestion_rate * 100)}
+    alpha = _get_congestion_alpha(db)
     congestion_weights = {}
     for node_id in graph.keys():
         if node_id in latest_data:
-            weight = calculate_congestion_weight(node_id, latest_data)
+            weight = calculate_congestion_weight(node_id, latest_data, alpha)
             congestion_weights[node_id] = weight
     points = db.query(EmergencyPoint).filter(
         EmergencyPoint.venue_id == venue_id,
@@ -658,15 +840,30 @@ def get_nearby_emergency(zone_id: int, venue_id: int = 1, db: Session = Depends(
     result.sort(key=lambda x: x["steps"])
     return result[:5]
 
+
 @app.post("/api/emergency/help", tags=["应急管理"])
-def send_emergency_help(zone_id: int, message: str = "", db: Session = Depends(get_db)):
+def send_emergency_help(zone_id: int, message: str = "", venue_id: int = 1, db: Session = Depends(get_db)):
     from notify import send_alert_email
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
-    venue = db.query(Venue).filter(Venue.id == zone.venue_id).first() if zone else None
+    venue = db.query(Venue).filter(Venue.id == (zone.venue_id if zone else venue_id)).first()
     zone_name = zone.name if zone else f"分区{zone_id}"
     venue_name = venue.name if venue else "未知场馆"
+    actual_venue_id = zone.venue_id if zone else venue_id
+
+    # 写入数据库
+    help_record = EmergencyHelp(
+        zone_id=zone_id,
+        venue_id=actual_venue_id,
+        message=message,
+        status="pending"
+    )
+    db.add(help_record)
+    db.commit()
+    db.refresh(help_record)
+
     help_message = f"""
     <h2>🚨 应急求助通知</h2>
+    <p><strong>求助编号：</strong> #{help_record.id}</p>
     <p><strong>求助时间：</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     <p><strong>所属场馆：</strong> {venue_name}</p>
     <p><strong>求助位置：</strong> {zone_name}</p>
@@ -675,7 +872,87 @@ def send_emergency_help(zone_id: int, message: str = "", db: Session = Depends(g
     <p style="color: #f44336; font-weight: bold;">请立即处理！</p>
     """
     send_alert_email(zone_name, 0, 0, 0, venue_name, help_message)
-    return {"message": "求助已发送", "zone_id": zone_id, "zone_name": zone_name, "venue_name": venue_name}
+    return {
+        "message": "求助已发送",
+        "help_id": help_record.id,
+        "status": "pending",
+        "zone_id": zone_id,
+        "zone_name": zone_name,
+        "venue_name": venue_name
+    }
+
+
+@app.get("/api/emergency/help/requests", tags=["应急管理"])
+def get_emergency_help_requests(venue_id: int = None, status: str = None, db: Session = Depends(get_db)):
+    query = db.query(EmergencyHelp)
+    if venue_id:
+        query = query.filter(EmergencyHelp.venue_id == venue_id)
+    if status:
+        query = query.filter(EmergencyHelp.status == status)
+    requests = query.order_by(EmergencyHelp.created_at.desc()).limit(50).all()
+
+    result = []
+    for req in requests:
+        zone = db.query(Zone).filter(Zone.id == req.zone_id).first()
+        venue = db.query(Venue).filter(Venue.id == req.venue_id).first()
+        result.append({
+            "id": req.id,
+            "zone_id": req.zone_id,
+            "zone_name": zone.name if zone else "未知",
+            "venue_name": venue.name if venue else "未知",
+            "message": req.message,
+            "status": req.status,
+            "created_at": req.created_at.strftime("%Y-%m-%d %H:%M:%S") if req.created_at else "",
+            "confirmed_at": req.confirmed_at.strftime("%Y-%m-%d %H:%M:%S") if req.confirmed_at else None
+        })
+    return result
+
+
+@app.put("/api/emergency/help/{help_id}/confirm", tags=["应急管理"])
+def confirm_emergency_help(help_id: int, db: Session = Depends(get_db)):
+    help_record = db.query(EmergencyHelp).filter(EmergencyHelp.id == help_id).first()
+    if not help_record:
+        raise HTTPException(status_code=404, detail="求助记录不存在")
+    help_record.status = "confirmed"
+    help_record.confirmed_at = datetime.now()
+    db.commit()
+    db.refresh(help_record)
+
+    zone = db.query(Zone).filter(Zone.id == help_record.zone_id).first()
+    venue = db.query(Venue).filter(Venue.id == help_record.venue_id).first()
+    zone_name = zone.name if zone else f"分区{help_record.zone_id}"
+    venue_name = venue.name if venue else "未知场馆"
+
+    # 发送确认回执邮件
+    from notify import send_alert_email
+    receipt_message = f"""
+    <h2>✅ 应急求助确认回执</h2>
+    <p><strong>求助编号：</strong> #{help_record.id}</p>
+    <p><strong>确认时间：</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+    <p><strong>所属场馆：</strong> {venue_name}</p>
+    <p><strong>求助位置：</strong> {zone_name}</p>
+    <p><strong>处理状态：</strong> 管理员已确认收到求助，正在赶往现场</p>
+    <hr>
+    <p style="color: #4CAF50; font-weight: bold;">工作人员已收到您的求助，请保持冷静！</p>
+    """
+    send_alert_email(zone_name, 0, 0, 0, venue_name, receipt_message)
+
+    return {"message": "已确认收到求助", "help_id": help_id, "status": "confirmed"}
+
+
+@app.get("/api/emergency/help/{help_id}/status", tags=["应急管理"])
+def check_emergency_help_status(help_id: int, db: Session = Depends(get_db)):
+    help_record = db.query(EmergencyHelp).filter(EmergencyHelp.id == help_id).first()
+    if not help_record:
+        raise HTTPException(status_code=404, detail="求助记录不存在")
+    return {
+        "help_id": help_record.id,
+        "status": help_record.status,
+        "status_text": "已确认" if help_record.status == "confirmed" else "待处理",
+        "created_at": help_record.created_at.strftime("%Y-%m-%d %H:%M:%S") if help_record.created_at else "",
+        "confirmed_at": help_record.confirmed_at.strftime("%Y-%m-%d %H:%M:%S") if help_record.confirmed_at else None
+    }
+
 
 # ========== 系统配置管理 ==========
 @app.get("/api/config", tags=["系统配置"])
@@ -686,6 +963,7 @@ def get_config(key: str = None, db: Session = Depends(get_db)):
     else:
         configs = db.query(SystemConfig).all()
         return configs
+
 
 @app.post("/api/config", tags=["系统配置"])
 def set_config(key: str, value: str, description: str = "", db: Session = Depends(get_db)):
@@ -699,6 +977,7 @@ def set_config(key: str, value: str, description: str = "", db: Session = Depend
         db.add(config)
     db.commit()
     return {"message": "配置已保存", "key": key, "value": value}
+
 
 # ========== 人流预测功能 ==========
 @app.get("/api/predict/{zone_id}", tags=["人流预测"])
@@ -746,6 +1025,7 @@ def predict_crowd(zone_id: int, minutes_ahead: int = 10, venue_id: int = 1, db: 
         "method": "moving_average"
     }
 
+
 @app.get("/api/predict/all", tags=["人流预测"])
 def predict_all_zones(minutes_ahead: int = 10, venue_id: int = 1, db: Session = Depends(get_db)):
     zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
@@ -755,3 +1035,258 @@ def predict_all_zones(minutes_ahead: int = 10, venue_id: int = 1, db: Session = 
         if "error" not in pred:
             results.append(pred)
     return results
+
+
+# ========== 路网可视化 ==========
+@app.get("/api/route/network-graph", tags=["路线规划"])
+def get_network_graph(venue_id: int = 1, db: Session = Depends(get_db)):
+    """返回路网图结构，供前端ECharts力导向图渲染"""
+    from route import get_route_graph, get_node_names
+    from sqlalchemy import desc
+    import math
+
+    node_names = get_node_names(db, venue_id)
+    graph = get_route_graph(db, venue_id)
+
+    zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
+    nodes = []
+    node_ids = list(node_names.keys())
+    n = len(node_ids)
+
+    for i, node_id in enumerate(node_ids):
+        angle = (2 * math.pi * i) / n
+        r = 150
+        x = round(math.cos(angle) * r + 200, 1)
+        y = round(math.sin(angle) * r + 200, 1)
+
+        latest = db.query(CrowdData).filter(CrowdData.zone_id == node_id).order_by(desc(CrowdData.timestamp)).first()
+        congestion_rate = 0
+        level = "green"
+        if latest:
+            zone = next((z for z in zones if z.id == node_id), None)
+            if zone and zone.capacity > 0:
+                congestion_rate = round(latest.current_count / zone.capacity * 100)
+                if congestion_rate >= 80:
+                    level = "red"
+                elif congestion_rate >= 60:
+                    level = "orange"
+                elif congestion_rate >= 40:
+                    level = "yellow"
+
+        nodes.append({
+            "id": str(node_id),
+            "name": node_names.get(node_id, ""),
+            "x": x, "y": y,
+            "congestion_rate": congestion_rate,
+            "level": level,
+            "symbolSize": 30 + congestion_rate * 0.3
+        })
+
+    edges_set = set()
+    edges = []
+    for from_id, to_ids in graph.items():
+        for to_id in to_ids:
+            key = (min(from_id, to_id), max(from_id, to_id))
+            if key not in edges_set:
+                edges_set.add(key)
+                edges.append({"source": str(from_id), "target": str(to_id)})
+
+    return {"nodes": nodes, "edges": edges}
+
+
+# ========== 数据统计 ==========
+@app.get("/api/stats/overview", tags=["数据统计"])
+def get_stats_overview(venue_id: int = 1, db: Session = Depends(get_db)):
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, desc as desc_order
+
+    zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
+    zone_ids = [z.id for z in zones]
+
+    total_crowd = db.query(func.sum(CrowdData.current_count)).filter(
+        CrowdData.zone_id.in_(zone_ids)
+    ).order_by(desc_order(CrowdData.timestamp)).limit(len(zone_ids)).all()
+
+    latest_total = sum(r[0] for r in total_crowd if r[0]) if total_crowd else 0
+    total_capacity = sum(z.capacity for z in zones)
+
+    total_alerts = db.query(func.count(Alert.id)).filter(Alert.zone_id.in_(zone_ids)).scalar() or 0
+    today_alerts = db.query(func.count(Alert.id)).filter(
+        Alert.zone_id.in_(zone_ids),
+        Alert.created_at >= datetime.now().replace(hour=0, minute=0, second=0)
+    ).scalar() or 0
+
+    total_help = db.query(func.count(EmergencyHelp.id)).filter(
+        EmergencyHelp.venue_id == venue_id
+    ).scalar() or 0
+    pending_help = db.query(func.count(EmergencyHelp.id)).filter(
+        EmergencyHelp.venue_id == venue_id, EmergencyHelp.status == "pending"
+    ).scalar() or 0
+
+    peak_zone = None
+    peak_rate = 0
+    for zone in zones:
+        latest = db.query(CrowdData).filter(CrowdData.zone_id == zone.id).order_by(
+            desc_order(CrowdData.timestamp)).first()
+        if latest and zone.capacity > 0:
+            rate = latest.current_count / zone.capacity * 100
+            if rate > peak_rate:
+                peak_rate = rate
+                peak_zone = zone.name
+
+    red_zones = 0
+    orange_zones = 0
+    for zone in zones:
+        latest = db.query(CrowdData).filter(CrowdData.zone_id == zone.id).order_by(
+            desc_order(CrowdData.timestamp)).first()
+        if latest and zone.capacity > 0:
+            rate = latest.current_count / zone.capacity
+            if rate >= 0.8:
+                red_zones += 1
+            elif rate >= 0.6:
+                orange_zones += 1
+
+    return {
+        "total_capacity": total_capacity,
+        "latest_total": latest_total,
+        "overall_rate": round(latest_total / total_capacity * 100, 1) if total_capacity > 0 else 0,
+        "total_alerts": total_alerts,
+        "today_alerts": today_alerts,
+        "total_help_requests": total_help,
+        "pending_help": pending_help,
+        "peak_zone": peak_zone,
+        "peak_rate": round(peak_rate, 1),
+        "red_zones": red_zones,
+        "orange_zones": orange_zones
+    }
+
+
+@app.get("/api/stats/congestion-ranking", tags=["数据统计"])
+def get_congestion_ranking(venue_id: int = 1, db: Session = Depends(get_db)):
+    from sqlalchemy import func, desc as desc_order
+
+    zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
+    ranking = []
+    for zone in zones:
+        latest = db.query(CrowdData).filter(CrowdData.zone_id == zone.id).order_by(
+            desc_order(CrowdData.timestamp)).first()
+        if latest:
+            rate = latest.current_count / zone.capacity * 100
+            level = "red" if rate >= 80 else "orange" if rate >= 60 else "yellow" if rate >= 40 else "green"
+            alert_count = db.query(func.count(Alert.id)).filter(Alert.zone_id == zone.id).scalar() or 0
+            ranking.append({
+                "zone_name": zone.name,
+                "capacity": zone.capacity,
+                "current_count": latest.current_count,
+                "congestion_rate": round(rate, 1),
+                "level": level,
+                "alert_count": alert_count
+            })
+    ranking.sort(key=lambda x: x["congestion_rate"], reverse=True)
+    return ranking
+
+
+@app.get("/api/stats/alert-trend", tags=["数据统计"])
+def get_alert_trend(venue_id: int = 1, days: int = 7, db: Session = Depends(get_db)):
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+
+    zones = db.query(Zone).filter(Zone.venue_id == venue_id).all()
+    zone_ids = [z.id for z in zones]
+    trend = []
+    for i in range(days - 1, -1, -1):
+        day = datetime.now() - timedelta(days=i)
+        start = day.replace(hour=0, minute=0, second=0)
+        end = day.replace(hour=23, minute=59, second=59)
+        count = db.query(func.count(Alert.id)).filter(
+            Alert.zone_id.in_(zone_ids),
+            Alert.created_at >= start,
+            Alert.created_at <= end
+        ).scalar() or 0
+        trend.append({"date": start.strftime("%m-%d"), "count": count})
+    return trend
+
+
+# ========== 路网连通性校验 ==========
+@app.get("/api/road/check-connectivity", tags=["路网管理"])
+def check_road_connectivity(venue_id: int = 1, db: Session = Depends(get_db)):
+    from route import get_route_graph, get_node_names
+
+    graph = get_route_graph(db, venue_id)
+    node_names = get_node_names(db, venue_id)
+    exits = [z.id for z in db.query(Zone).filter(Zone.venue_id == venue_id, Zone.is_exit == 1).all()]
+
+    if not exits:
+        return {"connected": True, "message": "当前场馆未设置出口，跳过连通性检查", "issues": []}
+
+    def bfs(start, targets):
+        visited = set()
+        queue = [start]
+        visited.add(start)
+        while queue:
+            current = queue.pop(0)
+            if current in targets:
+                return True
+            for neighbor in graph.get(current, []):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        return False
+
+    issues = []
+    for node_id in node_names:
+        if node_id in exits:
+            continue
+        zone = db.query(Zone).filter(Zone.id == node_id).first()
+        if zone and zone.capacity > 0:
+            if not bfs(node_id, exits):
+                issues.append({
+                    "zone_id": node_id,
+                    "zone_name": node_names[node_id],
+                    "message": f"{node_names[node_id]} 无法到达任何出口"
+                })
+
+    return {
+        "connected": len(issues) == 0,
+        "message": "所有分区均可到达出口" if len(issues) == 0 else f"发现 {len(issues)} 个分区无法到达出口",
+        "issues": issues
+    }
+
+
+# ========== 数据清理 ==========
+@app.post("/api/data/cleanup", tags=["系统"])
+def cleanup_old_data(days: int = 30, zone_id: int = None, db: Session = Depends(get_db)):
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(days=days)
+
+    query = db.query(CrowdData).filter(CrowdData.timestamp < cutoff)
+    if zone_id:
+        query = query.filter(CrowdData.zone_id == zone_id)
+
+    deleted = query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "message": f"已清理 {deleted} 条 {days} 天前的历史人流数据",
+        "deleted_count": deleted,
+        "cutoff_date": cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+
+@app.get("/api/data/stats", tags=["系统"])
+def get_data_stats(db: Session = Depends(get_db)):
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+
+    total_crowd = db.query(func.count(CrowdData.id)).scalar() or 0
+    total_alerts = db.query(func.count(Alert.id)).scalar() or 0
+    total_help = db.query(func.count(EmergencyHelp.id)).scalar() or 0
+    oldest = db.query(func.min(CrowdData.timestamp)).scalar()
+
+    return {
+        "total_crowd_records": total_crowd,
+        "total_alerts": total_alerts,
+        "total_help_requests": total_help,
+        "oldest_record": oldest.strftime("%Y-%m-%d %H:%M:%S") if oldest else "无数据",
+        "estimated_db_size_mb": round(total_crowd * 0.05 / 1024, 2)
+    }

@@ -29,7 +29,7 @@ const props = defineProps({
   }
 })
 
-const API_URL = 'https://secureachievement.up.railway.app'
+import { API_URL } from '../config.js'
 const chartRef = ref(null)
 let chart = null
 const selectedZone = ref(1)
@@ -199,7 +199,7 @@ onUnmounted(() => {
   padding: 8px 16px;
   border-radius: 8px;
   border: 1px solid #ddd;
-  background: white;
+  background: transparent;
   font-size: 14px;
   cursor: pointer;
 }

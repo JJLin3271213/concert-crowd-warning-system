@@ -54,7 +54,7 @@ const props = defineProps({
   }
 })
 
-const API_URL = 'https://secureachievement.up.railway.app'
+import { API_URL } from '../config.js'
 const chartRef = ref(null)
 let chart = null
 const selectedZoneId = ref(null)

@@ -1,6 +1,7 @@
 from database import engine, Base
 from models import Zone, CrowdData, Alert, User
 from sqlalchemy.orm import Session
+from auth import get_password_hash
 
 # 创建所有数据表
 print("正在创建数据库表...")
@@ -27,12 +28,12 @@ if db.query(Zone).count() == 0:
 else:
     print("分区数据已存在，跳过添加")
 
-# 创建管理员账号（简化版，直接插入）
+# 创建管理员账号（bcrypt哈希密码）
 if db.query(User).count() == 0:
     print("正在创建管理员账号...")
     admin = User(
         username="admin",
-        hashed_password="admin123",  # 简化版，直接存密码
+        hashed_password=get_password_hash("admin123"),
         is_admin=1
     )
     db.add(admin)

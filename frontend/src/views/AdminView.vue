@@ -1,139 +1,36 @@
 <template>
-  <div class="admin-container">
-    <!-- 背景动画 -->
-    <div class="bg-animation">
-      <div class="moving-gradient"></div>
+  <div class="admin-app">
+    <header class="admin-header glass-card">
+      <div class="h-left">
+        <div class="logo-dot" />
+        <div><strong>Concert Flow</strong><small>管理控制台</small></div>
+      </div>
+      <div class="h-right">
+        <span class="h-badge">{{ venueCount }}场馆 · {{ zoneCount }}分区 · {{ roadCount }}路网</span>
+        <el-button class="ghost-sm" @click="logout">退出</el-button>
+      </div>
+    </header>
+
+    <div class="admin-tabs">
+      <button v-for="t in tabs" :key="t.key" :class="{active:activeTab===t.key}" @click="activeTab=t.key">{{ t.label }}</button>
     </div>
 
-    <!-- 主内容 -->
-    <div class="content-wrapper">
-      <!-- 头部 -->
-      <header class="admin-header">
-        <div class="logo">
-          <div class="logo-icon">🔧</div>
-          <div class="logo-text">
-            <h1>演唱会人流预警系统</h1>
-            <p>管理后台 - 场馆运营控制中心</p>
-          </div>
-        </div>
-        <div class="header-actions">
-          <div class="user-info">
-            <el-icon><User /></el-icon>
-            <span>管理员</span>
-          </div>
-          <el-button class="logout-btn" @click="logout">
-            <el-icon><SwitchButton /></el-icon>
-            退出登录
-          </el-button>
-        </div>
-      </header>
-
-      <!-- 统计卡片 -->
-      <div class="stats-row">
-        <div class="stat-card">
-          <div class="stat-icon">🏟️</div>
-          <div class="stat-info">
-            <div class="stat-value">{{ venueCount }}</div>
-            <div class="stat-label">场馆总数</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">📍</div>
-          <div class="stat-info">
-            <div class="stat-value">{{ zoneCount }}</div>
-            <div class="stat-label">分区总数</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">🔗</div>
-          <div class="stat-info">
-            <div class="stat-value">{{ roadCount }}</div>
-            <div class="stat-label">路网连接</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">🚨</div>
-          <div class="stat-info">
-            <div class="stat-value">{{ emergencyCount }}</div>
-            <div class="stat-label">应急点位</div>
-          </div>
+    <div class="admin-body">
+      <RealTimeMonitor v-show="activeTab==='monitor'" />
+      <AdminStats v-show="activeTab==='stats'" :venue-id="1" />
+      <div v-show="activeTab==='topology'" class="glass-card" style="padding:20px">
+        <RouteGraph :venue-id="1" :highlight-edges="[]" />
+        <div style="display:flex;gap:12px;align-items:center;margin-top:14px">
+          <el-button type="primary" @click="checkConnectivity" :loading="checkingConn">连通性校验</el-button>
+          <div v-if="connResult" :class="['conn-tag',connResult.connected?'ok':'fail']">{{ connResult.message }}</div>
         </div>
       </div>
-
-      <!-- 管理标签页 -->
-      <div class="tabs-container">
-        <el-tabs v-model="activeTab" class="admin-tabs">
-          <el-tab-pane name="monitor">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><DataLine /></el-icon>
-                实时监控
-              </span>
-            </template>
-            <RealTimeMonitor />
-          </el-tab-pane>
-          
-          <el-tab-pane name="performance">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><Mic /></el-icon>
-                演出管理
-              </span>
-            </template>
-            <PerformanceManage />
-          </el-tab-pane>
-          
-          <el-tab-pane name="venue">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><OfficeBuilding /></el-icon>
-                场馆管理
-              </span>
-            </template>
-            <VenueManage @update:count="fetchStats" />
-          </el-tab-pane>
-          
-          <el-tab-pane name="zone">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><Location /></el-icon>
-                分区管理
-              </span>
-            </template>
-            <ZoneManage @update:count="fetchStats" />
-          </el-tab-pane>
-          
-          <el-tab-pane name="road">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><Connection /></el-icon>
-                路网管理
-              </span>
-            </template>
-            <RoadNetworkManage @update:count="fetchStats" />
-          </el-tab-pane>
-          
-          <el-tab-pane name="emergency">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><Warning /></el-icon>
-                应急点位
-              </span>
-            </template>
-            <EmergencyManage />
-          </el-tab-pane>
-          
-          <el-tab-pane name="config">
-            <template #label>
-              <span class="tab-label">
-                <el-icon><Setting /></el-icon>
-                系统配置
-              </span>
-            </template>
-            <SystemConfig />
-          </el-tab-pane>
-        </el-tabs>
-      </div>
+      <PerformanceManage v-show="activeTab==='perf'" />
+      <VenueManage v-show="activeTab==='venue'" @update:count="fetchStats" />
+      <ZoneManage v-show="activeTab==='zone'" @update:count="fetchStats" />
+      <RoadNetworkManage v-show="activeTab==='road'" @update:count="fetchStats" />
+      <EmergencyManage v-show="activeTab==='emergency'" />
+      <SystemConfig v-show="activeTab==='config'" />
     </div>
   </div>
 </template>
@@ -143,317 +40,54 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { 
-  User, SwitchButton, DataLine, OfficeBuilding, 
-  Location, Connection, Warning, Setting, Mic
-} from '@element-plus/icons-vue'
+import RealTimeMonitor from '../components/RealTimeMonitor.vue'
+import AdminStats from '../components/AdminStats.vue'
+import RouteGraph from '../components/RouteGraph.vue'
+import PerformanceManage from '../components/PerformanceManage.vue'
 import VenueManage from '../components/VenueManage.vue'
 import ZoneManage from '../components/ZoneManage.vue'
 import RoadNetworkManage from '../components/RoadNetworkManage.vue'
-import RealTimeMonitor from '../components/RealTimeMonitor.vue'
 import EmergencyManage from '../components/EmergencyManage.vue'
 import SystemConfig from '../components/SystemConfig.vue'
-import PerformanceManage from '../components/PerformanceManage.vue'
+import { API_URL } from '../config.js'
 
 const router = useRouter()
-const API_URL = 'https://secureachievement.up.railway.app'
-
 const activeTab = ref('monitor')
-const venueCount = ref(0)
-const zoneCount = ref(0)
-const roadCount = ref(0)
-const emergencyCount = ref(0)
+const tabs = [
+  {key:'monitor',label:'实时监控'},{key:'stats',label:'数据统计'},{key:'topology',label:'路网拓扑'},
+  {key:'perf',label:'演出'},{key:'venue',label:'场馆'},{key:'zone',label:'分区'},
+  {key:'road',label:'路网'},{key:'emergency',label:'应急'},{key:'config',label:'配置'}
+]
+const venueCount=ref(0);const zoneCount=ref(0);const roadCount=ref(0);const emergencyCount=ref(0)
+const checkingConn=ref(false);const connResult=ref(null)
 
-async function fetchStats() {
-  try {
-    const venues = await axios.get(`${API_URL}/api/venues`)
-    venueCount.value = venues.data.length
-    
-    const zones = await axios.get(`${API_URL}/api/venues/1/zones`)
-    zoneCount.value = zones.data.length
-    
-    const roads = await axios.get(`${API_URL}/api/venues/1/road_network`)
-    roadCount.value = roads.data.length
-    
-    const emergency = await axios.get(`${API_URL}/api/emergency/points`)
-    emergencyCount.value = emergency.data.length
-  } catch (error) {
-    console.error('获取统计失败:', error)
-  }
+async function fetchStats(){
+  try{const v=await axios.get(`${API_URL}/api/venues`);venueCount.value=v.data.length;const z=await axios.get(`${API_URL}/api/venues/1/zones`);zoneCount.value=z.data.length;const r=await axios.get(`${API_URL}/api/venues/1/road_network`);roadCount.value=r.data.length}catch(e){}
 }
-
-function logout() {
-  localStorage.removeItem('token')
-  ElMessage.success('已退出登录')
-  router.push('/')
-}
-
-onMounted(() => {
-  fetchStats()
-})
+async function checkConnectivity(){checkingConn.value=true;connResult.value=null;try{const r=await axios.get(`${API_URL}/api/road/check-connectivity`);connResult.value=r.data;ElMessage[r.data.connected?'success':'warning'](r.data.message)}catch(e){ElMessage.error('校验失败')}finally{checkingConn.value=false}}
+function logout(){localStorage.removeItem('token');ElMessage.success('已退出');router.push('/')}
+onMounted(()=>fetchStats())
 </script>
 
 <style scoped>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+.admin-app { max-width: 1400px; margin: 0 auto; padding: 16px; min-height: 100vh; }
+.admin-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; margin-bottom: 16px; }
+.h-left { display: flex; align-items: center; gap: 10px; }
+.logo-dot { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg,var(--accent),#a855f7); box-shadow: 0 0 15px var(--accent-glow); }
+.h-left strong { font-size: 15px; color: #fff; display: block; }
+.h-left small { font-size: 10px; color: var(--text-secondary); }
+.h-right { display: flex; align-items: center; gap: 12px; }
+.h-badge { font-size: 11px; color: var(--text-secondary); background: rgba(255,255,255,0.04); padding: 4px 12px; border-radius: 10px; }
+.ghost-sm { background: rgba(255,77,90,0.1)!important;border:1px solid rgba(255,77,90,0.2)!important;color:var(--red)!important;border-radius:10px!important;font-size:12px!important; }
 
-.admin-container {
-  min-height: 100vh;
-  position: relative;
-  overflow-x: hidden;
-}
+.admin-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+.admin-tabs button { white-space: nowrap; padding: 8px 16px; border: none; border-radius: 10px; background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .25s; }
+.admin-tabs button.active { background: var(--accent); color: #fff; }
+.admin-body { min-height: 60vh; }
 
-/* 背景动画 */
-.bg-animation {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  overflow: hidden;
-}
+.conn-tag { padding: 6px 14px; border-radius: 8px; font-size: 12px; }
+.conn-tag.ok { background: rgba(34,214,122,.1); color: var(--green); }
+.conn-tag.fail { background: rgba(255,77,90,.1); color: var(--red); }
 
-.moving-gradient {
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(135deg, 
-    #1a1a2e 0%, 
-    #16213e 50%, 
-    #0f3460 100%
-  );
-  animation: moveGradient 15s ease infinite;
-}
-
-@keyframes moveGradient {
-  0% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(3%, 3%) rotate(1deg); }
-  100% { transform: translate(0, 0) rotate(0deg); }
-}
-
-/* 主内容 */
-.content-wrapper {
-  position: relative;
-  z-index: 1;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-/* 头部 */
-.admin-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(255,255,255,0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 15px 25px;
-  margin-bottom: 30px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-  border: 1px solid rgba(255,255,255,0.2);
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.logo-icon {
-  font-size: 36px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  width: 50px;
-  height: 50px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  color: white;
-}
-
-.logo-text h1 {
-  font-size: 22px;
-  color: #333;
-  margin: 0;
-}
-
-.logo-text p {
-  font-size: 12px;
-  color: #888;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #f5f5f5;
-  border-radius: 25px;
-  color: #333;
-  font-size: 14px;
-}
-
-.logout-btn {
-  background: #f44336;
-  color: white;
-  border: none;
-  border-radius: 25px;
-  padding: 8px 20px;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.logout-btn:hover {
-  background: #d32f2f;
-  transform: translateY(-2px);
-}
-
-/* 统计卡片 */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-  margin-bottom: 30px;
-}
-
-.stat-card {
-  background: rgba(255,255,255,0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  transition: transform 0.3s, box-shadow 0.3s;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-}
-
-.stat-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 15px 40px rgba(0,0,0,0.15);
-}
-
-.stat-icon {
-  font-size: 40px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  color: white;
-}
-
-.stat-info {
-  flex: 1;
-}
-
-.stat-value {
-  font-size: 32px;
-  font-weight: bold;
-  color: #333;
-  line-height: 1;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #888;
-  margin-top: 5px;
-}
-
-/* 标签页容器 */
-.tabs-container {
-  background: rgba(255,255,255,0.95);
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-}
-
-.admin-tabs {
-  --el-tabs-header-height: 50px;
-}
-
-.admin-tabs :deep(.el-tabs__header) {
-  margin-bottom: 20px;
-  background: #f5f5f5;
-  border-radius: 12px;
-  padding: 5px;
-}
-
-.admin-tabs :deep(.el-tabs__nav-wrap) {
-  background: transparent;
-}
-
-.admin-tabs :deep(.el-tabs__item) {
-  border-radius: 10px;
-  margin: 0 5px;
-  transition: all 0.3s;
-  font-weight: 500;
-}
-
-.admin-tabs :deep(.el-tabs__item.is-active) {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
-}
-
-.admin-tabs :deep(.el-tabs__active-bar) {
-  display: none;
-}
-
-.tab-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 响应式 */
-@media (max-width: 768px) {
-  .stats-row {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-  }
-  
-  .admin-header {
-    flex-direction: column;
-    gap: 15px;
-  }
-  
-  .content-wrapper {
-    padding: 15px;
-  }
-  
-  .stat-card {
-    padding: 15px;
-  }
-  
-  .stat-icon {
-    width: 50px;
-    height: 50px;
-    font-size: 24px;
-  }
-  
-  .stat-value {
-    font-size: 24px;
-  }
-}
+@media (max-width:768px){.admin-app{padding:8px}.admin-tabs button{padding:6px 10px;font-size:11px}}
 </style>

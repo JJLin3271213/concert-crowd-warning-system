@@ -57,18 +57,13 @@ def dijkstra(graph, start, end, congestion_weights=None):
     
     return path if len(path) > 1 else []
 
-def calculate_congestion_weight(zone_id, latest_data):
-    """根据拥堵等级计算权重"""
+def calculate_congestion_weight(zone_id, latest_data, alpha=2.0):
+    """根据拥堵率计算动态权重 W = Wbase + α × C
+    返回拥堵惩罚值 α × C（Wbase=1 在Dijkstra中作为base_cost）
+    α默认=2.0，可通过系统配置调整"""
     if zone_id not in latest_data:
         return 0
-    
+
     congestion_rate = latest_data[zone_id].get("congestion_rate", 0)
-    
-    if congestion_rate >= 80:
-        return 100
-    elif congestion_rate >= 60:
-        return 50
-    elif congestion_rate >= 40:
-        return 10
-    else:
-        return 0
+    C = congestion_rate / 100.0
+    return alpha * C

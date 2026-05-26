@@ -93,6 +93,13 @@
         <span class="warning-icon">⚠️</span>
         <span>路线存在拥堵，建议预留更多时间或选择其他路线</span>
       </div>
+
+      <!-- 路网拓扑可视化 -->
+      <RouteGraph
+        v-if="routeResult.path && routeResult.path.length > 1"
+        :venue-id="venueId"
+        :highlight-edges="highlightEdges"
+      />
     </div>
 
     <!-- 应急导航结果 -->
@@ -120,8 +127,9 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import axios from 'axios'
+import RouteGraph from './RouteGraph.vue'
 
-const API_URL = 'https://secureachievement.up.railway.app'
+import { API_URL } from '../config.js'
 
 const props = defineProps({
   venueId: {
@@ -251,6 +259,17 @@ function getCongestionClass(rate) {
 }
 
 // 计算预计通行时间（分钟）- 基于实时拥堵动态计算
+// 计算需要高亮的路径边
+const highlightEdges = computed(() => {
+  if (!routeResult.value?.path || routeResult.value.path.length < 2) return []
+  const edges = []
+  const p = routeResult.value.path
+  for (let i = 0; i < p.length - 1; i++) {
+    edges.push([String(p[i]), String(p[i + 1])])
+  }
+  return edges
+})
+
 const estimatedTime = computed(() => {
   if (!routeResult.value || !routeResult.value.path_details) return 0
   
@@ -393,7 +412,7 @@ onMounted(() => {
   border: 1px solid #ddd;
   border-radius: 8px;
   font-size: 14px;
-  background: white;
+  background: transparent;
 }
 
 .route-actions {

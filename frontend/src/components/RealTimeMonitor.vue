@@ -1,397 +1,161 @@
 <template>
-  <div class="monitor-container">
-    <div class="monitor-header">
-      <h3>📊 实时人流监控大屏</h3>
-      <div class="venue-selector">
-        <el-select v-model="currentVenueId" @change="onVenueChange" placeholder="选择场馆" size="default">
-          <el-option 
-            v-for="venue in venues" 
-            :key="venue.id" 
-            :label="venue.name" 
-            :value="venue.id"
-          />
+  <div ref="monitorRoot" class="monitor-root">
+    <div class="mon-top">
+      <h3>实时人流监控</h3>
+      <div class="mon-actions">
+        <el-button v-if="autoRotate" size="small" class="ghost-xs" @click="autoRotate=false">停止轮播</el-button>
+        <el-button v-else size="small" class="ghost-xs" @click="startRotate">自动轮播</el-button>
+        <el-select v-model="currentVenueId" @change="onVenueChange" size="small" style="width:160px">
+          <el-option v-for="v in venues" :key="v.id" :label="v.name" :value="v.id" />
         </el-select>
+        <el-button size="small" circle @click="toggleFullscreen">{{ isFs?'✕':'⛶' }}</el-button>
       </div>
     </div>
-    
-    <div class="stats-row">
-      <div class="stat-card">
-        <div class="stat-value">{{ totalCount }}</div>
-        <div class="stat-label">实时总人数</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ totalCapacity }}</div>
-        <div class="stat-label">总容量</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ overallRate }}%</div>
-        <div class="stat-label">整体拥挤度</div>
-      </div>
-      <div class="stat-card warning">
-        <div class="stat-value">{{ alertCount }}</div>
-        <div class="stat-label">预警分区</div>
-      </div>
-    </div>
-    
-    <div class="charts-row">
-      <div class="chart-card">
-        <div class="chart-title">分区拥挤度排行</div>
-        <div class="rank-list">
-          <div v-for="(zone, index) in topZones" :key="zone.zone_id" class="rank-item">
-            <span class="rank-num">{{ index + 1 }}</span>
-            <span class="rank-name">{{ zone.zone_name }}</span>
-            <div class="rank-bar">
-              <div class="rank-fill" :style="{ width: zone.congestion_rate + '%', background: getLevelColor(zone.level) }"></div>
+
+    <!-- 当前视图 -->
+    <Transition name="fade" mode="out-in">
+      <!-- 视图1: 概览统计 -->
+      <div v-if="view==='overview'" key="ov" class="view-panel">
+        <div class="stat-row">
+          <div class="s-card"><span class="s-val">{{ totalCount }}</span><span class="s-lbl">实时总人数</span></div>
+          <div class="s-card"><span class="s-val">{{ totalCapacity }}</span><span class="s-lbl">总容量</span></div>
+          <div class="s-card"><span class="s-val t-red">{{ overallRate }}%</span><span class="s-lbl">拥挤指数</span></div>
+          <div class="s-card warn"><span class="s-val t-red">{{ alertCount }}</span><span class="s-lbl">预警分区</span></div>
+        </div>
+        <div class="two-col">
+          <div class="glass-card p-16">
+            <h4>拥挤度排行 TOP5</h4>
+            <div v-for="(z,i) in topZones" :key="i" class="rank-row">
+              <span class="rk-pos">{{ i+1 }}</span><span>{{ z.zone_name }}</span>
+              <div class="mini-bar"><div :style="{width:z.congestion_rate+'%',background:levelColor(z.level)}" /></div>
+              <span class="rk-pct">{{ z.congestion_rate }}%</span>
             </div>
-            <span class="rank-rate">{{ zone.congestion_rate }}%</span>
           </div>
-          <div v-if="topZones.length === 0" class="no-data">暂无数据</div>
-        </div>
-      </div>
-      
-      <div class="chart-card">
-        <div class="chart-title">预警记录</div>
-        <div class="alert-list">
-          <div v-for="alert in alerts" :key="alert.id" class="alert-item" :class="alert.level">
-            <span class="alert-icon">{{ getLevelIcon(alert.level) }}</span>
-            <span class="alert-text">{{ alert.message }}</span>
-            <span class="alert-time">{{ alert.time }}</span>
-          </div>
-          <div v-if="alerts.length === 0" class="no-alert">
-            暂无预警记录
+          <div class="glass-card p-16">
+            <h4>预警记录</h4>
+            <div v-if="!alerts.length" class="no-data">暂无预警</div>
+            <div v-for="a in alerts" :key="a.id" :class="['alert-row',a.level]">{{ a.message }}<small>{{ a.time }}</small></div>
           </div>
         </div>
       </div>
-    </div>
-    
-    <div class="refresh-info">
-      自动刷新: 每 {{ refreshInterval }} 秒 | 最后更新: {{ lastUpdateTime }}
-    </div>
+
+      <!-- 视图2: 分区卡片 -->
+      <div v-else key="zc" class="view-panel">
+        <div class="zone-grid-m">
+          <div v-for="z in zones" :key="z.zone_id" :class="['z-card','glass-card',z.level]">
+            <div class="zc-top"><span :class="['zc-dot',z.level]" /><strong>{{ z.zone_name }}</strong><span :class="['badge-sm',z.level]">{{ levelTxt(z.level) }}</span></div>
+            <div class="zc-body"><span class="zc-num">{{ z.current_count }}<small>/{{ z.capacity }}</small></span></div>
+            <div class="zc-bar"><div :class="['zc-fill',z.level]" :style="{width:z.congestion_rate+'%'}" /></div>
+            <span class="zc-rate">{{ z.congestion_rate }}%</span>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <div class="mon-foot">自动刷新 {{ refreshInterval }}s · 最后更新 {{ lastUpdateTime }}</div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import axios from 'axios'
+import { API_URL } from '../config.js'
 
-const API_URL = 'https://secureachievement.up.railway.app'
-const venues = ref([])
-const currentVenueId = ref(1)
-const zones = ref([])
-const totalCount = ref(0)
-const totalCapacity = ref(0)
-const overallRate = ref(0)
-const alertCount = ref(0)
-const topZones = ref([])
-const alerts = ref([])
-const refreshInterval = ref(5)
-const lastUpdateTime = ref('')
-let timer = null
+const monitorRoot = ref(null)
+const zones = ref([]); const venues = ref([]); const currentVenueId = ref(1)
+const refreshInterval = ref(5); const lastUpdateTime = ref('')
+const isFs = ref(false); const view = ref('overview'); const autoRotate = ref(true)
+let timer = null; let rotateTimer = null
 
-async function fetchVenues() {
-  try {
-    const response = await axios.get(`${API_URL}/api/venues`)
-    venues.value = response.data
-    if (venues.value.length > 0) {
-      currentVenueId.value = venues.value[0].id
-    }
-  } catch (error) {
-    console.error('获取场馆失败:', error)
-  }
-}
+const totalCount = computed(() => zones.value.reduce((s, z) => s + z.current_count, 0))
+const totalCapacity = computed(() => zones.value.reduce((s, z) => s + z.capacity, 0))
+const overallRate = computed(() => totalCapacity.value ? Math.round(totalCount.value / totalCapacity.value * 100) : 0)
+const alertCount = computed(() => zones.value.filter(z => z.level !== 'green').length)
+const topZones = computed(() => [...zones.value].sort((a, b) => b.congestion_rate - a.congestion_rate).slice(0, 5))
+const alerts = computed(() => {
+  const a = []
+  zones.value.forEach(z => {
+    if (z.level === 'red') a.push({ id: Date.now() + z.zone_id, level: 'red', message: `${z.zone_name} 严重拥堵 ${z.congestion_rate}%`, time: new Date().toLocaleTimeString() })
+    else if (z.level === 'orange') a.push({ id: Date.now() + z.zone_id, level: 'orange', message: `${z.zone_name} 拥堵 ${z.congestion_rate}%`, time: new Date().toLocaleTimeString() })
+  })
+  return a.slice(0, 8)
+})
+
+function levelColor(l) { return { green: '#22d67a', yellow: '#f5c842', orange: '#ff8c42', red: '#ff4d5a' }[l] || '#999' }
+function levelTxt(l) { return { green: '畅通', yellow: '较堵', orange: '拥堵', red: '严重' }[l] || l }
 
 async function fetchData() {
-  try {
-    const res = await axios.get(`${API_URL}/api/crowd/latest`, {
-      params: { venue_id: currentVenueId.value }
-    })
-    zones.value = res.data
-    
-    let count = 0, capacity = 0, alertCnt = 0
-    zones.value.forEach(zone => {
-      count += zone.current_count
-      capacity += zone.capacity
-      if (zone.level !== 'green') alertCnt++
-    })
-    totalCount.value = count
-    totalCapacity.value = capacity
-    overallRate.value = Math.round((count / capacity) * 100)
-    alertCount.value = alertCnt
-    
-    // 按拥挤度排序
-    topZones.value = [...zones.value].sort((a, b) => b.congestion_rate - a.congestion_rate).slice(0, 5)
-    
-    // 生成预警记录
-    const newAlerts = []
-    zones.value.forEach(zone => {
-      if (zone.level === 'red') {
-        newAlerts.push({
-          id: Date.now() + zone.zone_id,
-          level: 'red',
-          message: `${zone.zone_name} 严重拥堵，拥挤度 ${zone.congestion_rate}%`,
-          time: new Date().toLocaleTimeString()
-        })
-      } else if (zone.level === 'orange') {
-        newAlerts.push({
-          id: Date.now() + zone.zone_id,
-          level: 'orange',
-          message: `${zone.zone_name} 拥堵，拥挤度 ${zone.congestion_rate}%`,
-          time: new Date().toLocaleTimeString()
-        })
-      }
-    })
-    alerts.value = newAlerts.slice(0, 10)
-    
-    lastUpdateTime.value = new Date().toLocaleTimeString()
-  } catch (error) {
-    console.error('获取数据失败:', error)
-  }
+  try { const r = await axios.get(`${API_URL}/api/crowd/latest`, { params: { venue_id: currentVenueId.value } }); zones.value = r.data; lastUpdateTime.value = new Date().toLocaleTimeString() } catch (e) { /* */ }
 }
+async function fetchVenues() { try { const r = await axios.get(`${API_URL}/api/venues`); venues.value = r.data; if (venues.value.length) currentVenueId.value = venues.value[0].id } catch (e) { /* */ } }
+async function onVenueChange() { await fetchData() }
+function toggleFullscreen() { const el = monitorRoot.value; if (!document.fullscreenElement) { el?.requestFullscreen(); isFs.value = true } else { document.exitFullscreen(); isFs.value = false } }
 
-async function onVenueChange() {
-  await fetchData()
-}
+function startRotate() { autoRotate.value = true; runRotate() }
+function runRotate() { if (rotateTimer) clearInterval(rotateTimer); rotateTimer = setInterval(() => { if (autoRotate.value) view.value = view.value === 'overview' ? 'zones' : 'overview' }, 8000) }
 
-function getLevelColor(level) {
-  const colors = { green: '#4CAF50', yellow: '#FFC107', orange: '#FF9800', red: '#f44336' }
-  return colors[level] || '#999'
-}
-
-function getLevelIcon(level) {
-  const icons = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢' }
-  return icons[level] || '⚪'
-}
-
-async function loadConfig() {
-  const res = await axios.get(`${API_URL}/api/config`, { params: { key: 'refresh_interval' } })
-  if (res.data.value) {
-    refreshInterval.value = parseInt(res.data.value)
-  }
-}
-
-function startTimer() {
-  if (timer) clearInterval(timer)
-  timer = setInterval(fetchData, refreshInterval.value * 1000)
-}
-
-watch(refreshInterval, () => {
-  startTimer()
-})
-
-onMounted(() => {
-  fetchVenues()
-  loadConfig()
-  fetchData()
-  startTimer()
-})
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-})
+onMounted(async () => { await fetchVenues(); fetchData(); timer = setInterval(fetchData, refreshInterval.value * 1000); runRotate() })
+onUnmounted(() => { if (timer) clearInterval(timer); if (rotateTimer) clearInterval(rotateTimer) })
+watch(refreshInterval, () => { if (timer) clearInterval(timer); timer = setInterval(fetchData, refreshInterval.value * 1000) })
 </script>
 
 <style scoped>
-.monitor-container {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
+.monitor-root { background: transparent; }
+.mon-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+.mon-top h3 { color: #fff; font-size: 16px; margin: 0; }
+.mon-actions { display: flex; gap: 8px; align-items: center; }
+.ghost-xs { background: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: var(--text-secondary) !important; font-size: 11px !important; }
 
-.monitor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 15px;
-}
+.view-panel { min-height: 300px; }
+.stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 16px; }
+.s-card { background: var(--glass); border: 1px solid var(--border-glass); border-radius: 14px; padding: 18px; text-align: center; backdrop-filter: blur(20px); }
+.s-card.warn { border-color: rgba(255,77,90,0.3); animation: pulse-warn 2s infinite; }
+.s-val { display: block; font-size: 28px; font-weight: 800; color: #fff; }
+.t-red { color: var(--red); }
+.s-lbl { font-size: 11px; color: var(--text-secondary); margin-top: 4px; display: block; }
 
-.monitor-header h3 {
-  margin: 0;
-  color: #333;
-}
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.p-16 { padding: 16px; }
+h4 { font-size: 13px; color: #fff; margin-bottom: 12px; }
 
-.venue-selector {
-  min-width: 200px;
-}
+.rank-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: #c8c8e0; }
+.rk-pos { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+.mini-bar { flex: 1; height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+.mini-bar div { height: 100%; border-radius: 3px; }
+.rk-pct { font-weight: 700; font-size: 11px; }
 
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-  margin-bottom: 20px;
-}
+.alert-row { padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 11px; display: flex; justify-content: space-between; }
+.alert-row.red { background: rgba(255,77,90,0.1); border-left: 3px solid var(--red); }
+.alert-row.orange { background: rgba(255,140,66,0.1); border-left: 3px solid var(--orange); }
+.alert-row small { color: var(--text-secondary); }
+.no-data { text-align: center; color: var(--text-secondary); padding: 30px; font-size: 12px; }
 
-.stat-card {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 16px;
-  padding: 20px;
-  text-align: center;
-  color: white;
-}
+.zone-grid-m { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.z-card { padding: 14px; }
+.z-card.red { border-color: rgba(255,77,90,0.3); animation: pulse-warn 2s infinite; }
+.zc-top { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.zc-dot { width: 8px; height: 8px; border-radius: 50%; }
+.zc-dot.green { background: #22d67a; } .zc-dot.yellow { background: #f5c842; }
+.zc-dot.orange { background: #ff8c42; } .zc-dot.red { background: #ff4d5a; }
+.zc-top strong { font-size: 13px; color: #fff; flex: 1; }
+.badge-sm { font-size: 9px; padding: 2px 6px; border-radius: 8px; font-weight: 700; }
+.badge-sm.green { background: rgba(34,214,122,.15); color: #22d67a; }
+.badge-sm.yellow { background: rgba(245,200,66,.15); color: #f5c842; }
+.badge-sm.orange { background: rgba(255,140,66,.15); color: #ff8c42; }
+.badge-sm.red { background: rgba(255,77,90,.15); color: #ff4d5a; }
+.zc-body { margin-bottom: 6px; }
+.zc-num { font-size: 18px; font-weight: 800; color: #fff; }
+.zc-num small { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.zc-bar { height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+.zc-fill { height: 100%; border-radius: 3px; }
+.zc-fill.green { background: #22d67a; } .zc-fill.yellow { background: #f5c842; }
+.zc-fill.orange { background: #ff8c42; } .zc-fill.red { background: #ff4d5a; }
+.zc-rate { font-size: 11px; color: var(--text-secondary); }
 
-.stat-card.warning {
-  background: linear-gradient(135deg, #f44336, #e91e63);
-}
+.mon-foot { text-align: center; font-size: 11px; color: var(--text-secondary); margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.04); }
 
-.stat-value {
-  font-size: 32px;
-  font-weight: bold;
-}
+.fade-enter-active, .fade-leave-active { transition: opacity .4s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
-.stat-label {
-  font-size: 14px;
-  margin-top: 5px;
-  opacity: 0.9;
-}
-
-.charts-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-.chart-card {
-  background: #f5f5f5;
-  border-radius: 12px;
-  padding: 15px;
-}
-
-.chart-title {
-  font-weight: bold;
-  margin-bottom: 15px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-.rank-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.rank-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.rank-num {
-  width: 28px;
-  height: 28px;
-  background: #667eea;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-.rank-name {
-  width: 100px;
-  font-size: 14px;
-}
-
-.rank-bar {
-  flex: 1;
-  height: 8px;
-  background: #e0e0e0;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.rank-fill {
-  height: 100%;
-  border-radius: 10px;
-}
-
-.rank-rate {
-  width: 40px;
-  font-size: 12px;
-  font-weight: bold;
-}
-
-.alert-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.alert-item {
-  padding: 10px;
-  border-radius: 8px;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.alert-item.red {
-  background: #ffebee;
-  border-left: 4px solid #f44336;
-}
-
-.alert-item.orange {
-  background: #fff3e0;
-  border-left: 4px solid #FF9800;
-}
-
-.alert-icon {
-  font-size: 16px;
-}
-
-.alert-text {
-  flex: 1;
-  font-size: 13px;
-}
-
-.alert-time {
-  font-size: 11px;
-  color: #999;
-}
-
-.no-alert, .no-data {
-  text-align: center;
-  padding: 20px;
-  color: #999;
-}
-
-.refresh-info {
-  text-align: center;
-  font-size: 12px;
-  color: #999;
-  margin-top: 15px;
-  padding-top: 10px;
-  border-top: 1px solid #eee;
-}
-
-@media (max-width: 768px) {
-  .stats-row {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-  }
-  
-  .charts-row {
-    grid-template-columns: 1fr;
-  }
-  
-  .monitor-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .venue-selector {
-    width: 100%;
-  }
-  
-  .rank-name {
-    width: 70px;
-    font-size: 12px;
-  }
-}
+@media (max-width:768px) { .stat-row { grid-template-columns: repeat(2,1fr); } .two-col { grid-template-columns: 1fr; } .zone-grid-m { grid-template-columns: 1fr 1fr; } }
 </style>

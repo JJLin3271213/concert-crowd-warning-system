@@ -1,39 +1,91 @@
 <template>
   <div class="manage-container">
-    <h3>🚨 应急点位管理</h3>
-    
-    <div class="toolbar">
-      <el-button type="primary" @click="showAddDialog">+ 添加应急点位</el-button>
-    </div>
-    
-    <el-table :data="points" stripe>
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="name" label="点位名称" />
-      <el-table-column label="类型" width="100">
-        <template #default="{ row }">
-          <el-tag :type="getTypeTag(row.type)">
-            {{ getTypeName(row.type) }}
-          </el-tag>
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="应急点位" name="points">
+        <div class="toolbar">
+          <el-button type="primary" @click="showAddDialog">+ 添加应急点位</el-button>
+        </div>
+
+        <el-table :data="points" stripe>
+          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="name" label="点位名称" />
+          <el-table-column label="类型" width="100">
+            <template #default="{ row }">
+              <el-tag :type="getTypeTag(row.type)">
+                {{ getTypeName(row.type) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="zone_id" label="关联分区" width="100" />
+          <el-table-column prop="phone" label="联系电话" />
+          <el-table-column prop="description" label="描述" />
+          <el-table-column label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 1 ? 'success' : 'danger'">
+                {{ row.status === 1 ? '正常' : '停用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150">
+            <template #default="{ row }">
+              <el-button type="primary" link @click="editPoint(row)">编辑</el-button>
+              <el-button type="danger" link @click="deletePoint(row.id)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane name="helpRequests">
+        <template #label>
+          <span>应急求助记录 <el-badge :value="pendingCount" :hidden="pendingCount === 0" /></span>
         </template>
-      </el-table-column>
-      <el-table-column prop="zone_id" label="关联分区" width="100" />
-      <el-table-column prop="phone" label="联系电话" />
-      <el-table-column prop="description" label="描述" />
-      <el-table-column label="状态" width="80">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-            {{ row.status === 1 ? '正常' : '停用' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="150">
-        <template #default="{ row }">
-          <el-button type="primary" link @click="editPoint(row)">编辑</el-button>
-          <el-button type="danger" link @click="deletePoint(row.id)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-    
+        <div class="toolbar">
+          <el-button type="primary" @click="fetchHelpRequests" :loading="helpLoading">
+            <el-icon><Refresh /></el-icon> 刷新
+          </el-button>
+          <el-select v-model="helpFilter" @change="fetchHelpRequests" placeholder="筛选状态" clearable style="width: 150px; margin-left: 10px;">
+            <el-option label="全部" value="" />
+            <el-option label="待处理" value="pending" />
+            <el-option label="已确认" value="confirmed" />
+          </el-select>
+        </div>
+
+        <el-table :data="helpRequests" stripe>
+          <el-table-column prop="id" label="编号" width="70">
+            <template #default="{ row }">#{{ row.id }}</template>
+          </el-table-column>
+          <el-table-column prop="zone_name" label="求助位置" />
+          <el-table-column prop="venue_name" label="所属场馆" />
+          <el-table-column prop="message" label="补充说明">
+            <template #default="{ row }">{{ row.message || '无' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'confirmed' ? 'success' : 'warning'">
+                {{ row.status === 'confirmed' ? '已确认' : '待处理' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="求助时间" width="170" />
+          <el-table-column label="操作" width="120">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.status === 'pending'"
+                type="success"
+                size="small"
+                @click="confirmHelp(row.id)"
+                :loading="confirmLoading === row.id"
+              >
+                确认收到
+              </el-button>
+              <span v-else class="confirmed-text">{{ row.confirmed_at }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 添加/编辑应急点位对话框 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="点位名称">
@@ -71,17 +123,28 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 
-const API_URL = 'https://secureachievement.up.railway.app'
+import { API_URL } from '../config.js'
+
+const activeTab = ref('points')
 const points = ref([])
 const zones = ref([])
 const dialogVisible = ref(false)
 const dialogTitle = ref('添加应急点位')
 const isEdit = ref(false)
 const form = ref({ id: null, name: '', type: 'medical', zone_id: null, phone: '', description: '', status: 1 })
+
+// 应急求助记录
+const helpRequests = ref([])
+const helpLoading = ref(false)
+const helpFilter = ref('')
+const confirmLoading = ref(null)
+
+const pendingCount = computed(() => helpRequests.value.filter(r => r.status === 'pending').length)
 
 async function fetchPoints() {
   const res = await axios.get(`${API_URL}/api/emergency/points`)
@@ -93,12 +156,44 @@ async function fetchZones() {
   zones.value = res.data
 }
 
+async function fetchHelpRequests() {
+  helpLoading.value = true
+  try {
+    const params = {}
+    if (helpFilter.value) params.status = helpFilter.value
+    const res = await axios.get(`${API_URL}/api/emergency/help/requests`, { params })
+    helpRequests.value = res.data
+  } catch (e) {
+    console.error('获取求助记录失败:', e)
+  } finally {
+    helpLoading.value = false
+  }
+}
+
+async function confirmHelp(helpId) {
+  try {
+    await ElMessageBox.confirm('确认已收到该求助并正在处理？', '确认回执', { type: 'warning' })
+  } catch (e) {
+    return
+  }
+  confirmLoading.value = helpId
+  try {
+    await axios.put(`${API_URL}/api/emergency/help/${helpId}/confirm`)
+    ElMessage.success('已确认收到求助，回执邮件已发送')
+    await fetchHelpRequests()
+  } catch (e) {
+    ElMessage.error('操作失败')
+  } finally {
+    confirmLoading.value = null
+  }
+}
+
 async function savePoint() {
   if (!form.value.name) {
     ElMessage.warning('请输入点位名称')
     return
   }
-  
+
   if (isEdit.value) {
     await axios.put(`${API_URL}/api/emergency/points/${form.value.id}`, null, {
       params: form.value
@@ -152,17 +247,22 @@ function getTypeTag(type) {
 onMounted(() => {
   fetchPoints()
   fetchZones()
+  fetchHelpRequests()
 })
 </script>
 
 <style scoped>
 .manage-container {
-  background: white;
+  background: transparent;
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 20px;
 }
 .toolbar {
   margin-bottom: 15px;
+}
+.confirmed-text {
+  font-size: 12px;
+  color: #999;
 }
 </style>

@@ -101,3 +101,16 @@ class Performance(Base):
     poster_url = Column(String(500))
     status = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.datetime.now)
+
+
+# 应急求助记录表
+class EmergencyHelp(Base):
+    __tablename__ = "emergency_help"
+
+    id = Column(Integer, primary_key=True, index=True)
+    zone_id = Column(Integer, nullable=False)
+    venue_id = Column(Integer, nullable=False)
+    message = Column(String(500))
+    status = Column(String(20), default="pending")  # pending: 待处理, confirmed: 已确认
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    confirmed_at = Column(DateTime, nullable=True)

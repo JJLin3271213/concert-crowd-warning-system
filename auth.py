@@ -3,6 +3,7 @@ from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from passlib.context import CryptContext
 from database import get_db
 from models import User
 
@@ -11,17 +12,32 @@ SECRET_KEY = "your-secret-key-2026-concert-system"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
-# 认证方案（必须在最前面定义）
+# 密码加密上下文
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# 认证方案
 security = HTTPBearer()
 
-# 简单密码加密（用于毕设演示）
+
 def verify_password(plain_password, hashed_password):
-    """验证密码（简化版）"""
-    return plain_password == hashed_password
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except ValueError:
+        # 兼容旧版明文密码（非bcrypt格式）
+        return plain_password == hashed_password
+
 
 def get_password_hash(password):
-    """获取密码哈希（简化版）"""
-    return password
+    return pwd_context.hash(password)
+
+
+def needs_rehash(hashed_password):
+    """检查密码是否需要重新哈希（旧版明文密码）"""
+    try:
+        pwd_context.verify("", hashed_password)
+        return False
+    except ValueError:
+        return True
 
 def authenticate_user(db: Session, username: str, password: str):
     user = db.query(User).filter(User.username == username).first()

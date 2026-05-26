@@ -1,6 +1,7 @@
 from database import engine, Base
 from models import Venue, Zone, RoadNetwork, User, Performance, EmergencyPoint, SystemConfig
 from sqlalchemy.orm import Session
+from auth import get_password_hash
 
 print("正在创建数据库表...")
 Base.metadata.create_all(bind=engine)
@@ -10,7 +11,7 @@ db = Session(engine)
 
 # 创建管理员账号
 if db.query(User).count() == 0:
-    admin = User(username="admin", hashed_password="admin123", is_admin=1)
+    admin = User(username="admin", hashed_password=get_password_hash("admin123"), is_admin=1)
     db.add(admin)
     print("管理员账号已创建: admin / admin123")
 

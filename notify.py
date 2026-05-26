@@ -88,25 +88,29 @@ def send_alert_email(zone_name, congestion_rate, current_count, capacity, venue_
 sent_alerts = {}
 
 def check_and_send_alert(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name=None):
-    """检查拥堵等级并发送预警"""
+    """检查拥堵等级并发送预警（异步，不阻塞主请求）"""
     from datetime import datetime, timedelta
-    
-    # 拥堵率 >= 80% 才发送预警
+    import threading
+
     if congestion_rate >= 80:
         now = datetime.now()
         alert_key = f"{zone_id}_{venue_name}"
-        
-        # 5分钟内不重复发送
+
         if alert_key in sent_alerts:
             last_time = sent_alerts[alert_key]
             if (now - last_time) < timedelta(minutes=5):
                 return
 
-        success = send_alert_email(zone_name, congestion_rate, current_count, capacity, venue_name)
-        if success:
-            sent_alerts[alert_key] = now
-            # 持久化预警记录到数据库
-            _save_alert_to_db(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name)
+        sent_alerts[alert_key] = now
+        # 持久化到数据库
+        _save_alert_to_db(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name)
+        # 邮件发送放到后台线程，不阻塞主请求
+        t = threading.Thread(
+            target=send_alert_email,
+            args=(zone_name, congestion_rate, current_count, capacity, venue_name),
+            daemon=True
+        )
+        t.start()
     else:
         alert_key = f"{zone_id}_{venue_name}"
         if alert_key in sent_alerts:

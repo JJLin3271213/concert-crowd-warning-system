@@ -10,7 +10,10 @@ def get_route_graph(db: Session, venue_id: int):
         if road.from_zone_id not in graph:
             graph[road.from_zone_id] = []
         graph[road.from_zone_id].append(road.to_zone_id)
-    
+        # 确保 to_zone_id 也在图中，即使它没有出边
+        if road.to_zone_id not in graph:
+            graph[road.to_zone_id] = []
+
     return graph
 
 def get_node_names(db: Session, venue_id: int):

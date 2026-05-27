@@ -5,6 +5,12 @@
       <p class="route-desc">根据实时拥堵情况，推荐最优路线</p>
     </div>
 
+    <!-- 拓扑选点图 -->
+    <div class="topo-picker">
+      <RouteGraph :venue-id="venueId" :highlight-edges="[]" @plan-route="onGraphPlan" />
+      <div class="picker-hint">点击节点选择起点，再点击另一个节点选择终点，自动规划</div>
+    </div>
+
     <!-- 起点终点选择 -->
     <div class="route-selectors">
       <div class="selector">
@@ -99,7 +105,25 @@
         v-if="routeResult.path && routeResult.path.length > 1"
         :venue-id="venueId"
         :highlight-edges="highlightEdges"
+        :compare-edges="compareEdges"
+        @plan-route="onGraphPlan"
       />
+    </div>
+
+    <!-- α对比实验 -->
+    <div v-if="startNode && endNode" class="compare-section">
+      <button class="compare-btn" @click="runCompare" :disabled="comparing">
+        {{ comparing ? '对比中...' : 'α对比实验 (1.5 / 2.0 / 3.0)' }}
+      </button>
+      <div v-if="compareResult" class="compare-table">
+        <div v-for="r in compareResult" :key="r.alpha" :class="['compare-row', { best: r.alpha === 2.0 }]">
+          <span class="cr-alpha">α={{ r.alpha }}</span>
+          <span class="cr-steps">{{ r.steps }}步</span>
+          <span class="cr-avg">均拥堵 {{ r.avg_congestion }}%</span>
+          <span class="cr-path">{{ r.path_names.join(' → ') }}</span>
+          <span v-if="r.alpha === 2.0" class="cr-badge">推荐</span>
+        </div>
+      </div>
     </div>
 
     <!-- 应急导航结果 -->
@@ -127,6 +151,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 import RouteGraph from './RouteGraph.vue'
 
 import { API_URL } from '../config.js'
@@ -144,8 +169,44 @@ const endNode = ref(null)
 const loading = ref(false)
 const routeResult = ref(null)
 const evacuateResult = ref(null)
+const comparing = ref(false)
+const compareResult = ref(null)
+
+async function runCompare() {
+  comparing.value = true
+  compareResult.value = null
+  try {
+    const res = await axios.get(`${API_URL}/api/route/compare`, {
+      params: { start: startNode.value, end: endNode.value, venue_id: props.venueId || 1 }
+    })
+    if (res.data.results) compareResult.value = res.data.results
+  } catch (e) { console.error('对比失败', e) }
+  finally { comparing.value = false }
+}
+
+const compareEdges = computed(() => {
+  if (!compareResult.value || !nodes.value.length) return []
+  const colors = ['#42a5f5', '#7c5cfc', '#f44336']
+  const allEdges = []
+  compareResult.value.forEach((r, i) => {
+    if (r.path_names && r.path_names.length > 1) {
+      for (let j = 0; j < r.path_names.length - 1; j++) {
+        const fn = nodes.value.find(n => n.name === r.path_names[j])
+        const tn = nodes.value.find(n => n.name === r.path_names[j+1])
+        if (fn && tn) allEdges.push([String(fn.id), String(tn.id), colors[i]])
+      }
+    }
+  })
+  return allEdges
+})
 
 // 获取所有节点（根据场馆ID）
+function onGraphPlan(fromId, toId) {
+  startNode.value = fromId
+  endNode.value = toId
+  planRoute()
+}
+
 async function fetchNodes() {
   try {
     const venueId = props.venueId || 1
@@ -162,34 +223,18 @@ async function fetchNodes() {
       startNode.value = entrance ? entrance.id : nodes.value[0].id
       endNode.value = exit ? exit.id : nodes.value[nodes.value.length - 1].id
     } else {
-      // 备用默认节点
-      nodes.value = [
-        { id: 1, name: "东看台" }, { id: 2, name: "西看台" },
-        { id: 3, name: "南看台" }, { id: 4, name: "北看台" },
-        { id: 5, name: "内场VIP区" }, { id: 6, name: "内场普通A区" },
-        { id: 7, name: "内场普通B区" }, { id: 8, name: "入口" }, { id: 9, name: "出口" }
-      ]
-      startNode.value = 8
-      endNode.value = 9
+      ElMessage.warning('未获取到该场馆的节点数据')
     }
   } catch (error) {
     console.error('获取节点失败:', error)
-    // 备用默认节点
-    nodes.value = [
-      { id: 1, name: "东看台" }, { id: 2, name: "西看台" },
-      { id: 3, name: "南看台" }, { id: 4, name: "北看台" },
-      { id: 5, name: "内场VIP区" }, { id: 6, name: "内场普通A区" },
-      { id: 7, name: "内场普通B区" }, { id: 8, name: "入口" }, { id: 9, name: "出口" }
-    ]
-    startNode.value = 8
-    endNode.value = 9
+    ElMessage.error('获取场馆节点失败')
   }
 }
 
 // 规划路线
 async function planRoute() {
   if (!startNode.value || !endNode.value) {
-    alert('请选择起点和终点')
+    ElMessage.warning('请选择起点和终点')
     return
   }
   
@@ -208,13 +253,13 @@ async function planRoute() {
     })
     
     if (response.data.error) {
-      alert(response.data.error)
+      ElMessage.error(response.data.error)
     } else {
       routeResult.value = response.data
     }
   } catch (error) {
     console.error('路线规划失败:', error)
-    alert('路线规划失败，请重试')
+    ElMessage.error('路线规划失败，请检查网络连接')
   } finally {
     loading.value = false
   }
@@ -223,7 +268,7 @@ async function planRoute() {
 // 应急导航
 async function evacuate() {
   if (!startNode.value) {
-    alert('请选择起点')
+    ElMessage.warning('请选择起点')
     return
   }
   
@@ -238,13 +283,13 @@ async function evacuate() {
     })
     
     if (response.data.error) {
-      alert(response.data.error)
+      ElMessage.error(response.data.error)
     } else {
       evacuateResult.value = response.data
     }
   } catch (error) {
     console.error('应急导航失败:', error)
-    alert('应急导航失败，请重试')
+    ElMessage.error('应急导航失败，请检查网络连接')
   } finally {
     loading.value = false
   }
@@ -369,7 +414,7 @@ onMounted(() => {
 
 <style scoped>
 .route-planner {
-  background: rgba(255,255,255,0.95);
+  background: var(--purple-glass);
   border-radius: 20px;
   padding: 20px;
   margin-bottom: 20px;
@@ -378,12 +423,13 @@ onMounted(() => {
 
 .route-header h3 {
   margin: 0 0 5px 0;
-  color: #333;
+  color: #fff;
+  font-size: 16px;
 }
 
 .route-desc {
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   margin: 0 0 15px 0;
 }
 
@@ -402,17 +448,22 @@ onMounted(() => {
 .selector label {
   display: block;
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   margin-bottom: 5px;
 }
 
 .node-select {
   width: 100%;
   padding: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid rgba(100,75,200,0.25);
   border-radius: 8px;
   font-size: 14px;
-  background: transparent;
+  background: var(--purple-surface);
+  color: var(--text-primary);
+}
+.node-select option {
+  background: #1e1a3c;
+  color: var(--text-primary);
 }
 
 .route-actions {
@@ -457,12 +508,12 @@ button:disabled {
 
 .route-result, .evacuate-result {
   margin-top: 15px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid rgba(100,75,200,0.25);
   padding-top: 15px;
 }
 
 .route-summary {
-  background: #f5f5f5;
+  background: var(--purple-surface);
   border-radius: 12px;
   padding: 12px;
   margin-bottom: 15px;
@@ -481,17 +532,19 @@ button:disabled {
 
 .summary-item .label {
   font-size: 13px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .summary-item .value {
   font-weight: bold;
   font-size: 14px;
+  color: var(--text-primary);
 }
 
 .route-path {
   font-size: 12px;
   word-break: break-all;
+  color: var(--text-primary);
 }
 
 .value.green { color: #4CAF50; }
@@ -513,7 +566,7 @@ button:disabled {
   display: flex;
   gap: 12px;
   padding: 12px;
-  background: #f9f9f9;
+  background: var(--purple-surface);
   border-radius: 10px;
   margin-bottom: 8px;
 }
@@ -539,6 +592,7 @@ button:disabled {
 .step-route {
   font-weight: bold;
   margin-bottom: 5px;
+  color: var(--text-primary);
 }
 
 .step-status {
@@ -546,6 +600,7 @@ button:disabled {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 5px;
+  color: var(--text-secondary);
 }
 
 .status-badge {
@@ -634,7 +689,7 @@ button:disabled {
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid #ddd;
+  border: 2px solid rgba(100,75,200,0.25);
   border-top-color: #4CAF50;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -644,24 +699,29 @@ button:disabled {
   to { transform: rotate(360deg); }
 }
 
+.topo-picker { margin-bottom: 16px; }
+.picker-hint { text-align: center; font-size: 11px; color: var(--text-secondary); margin-top: 6px; }
+
+.compare-section { margin-top: 14px; }
+.compare-btn { width: 100%; padding: 10px; border: 1px dashed rgba(100,75,200,0.35); border-radius: 10px; background: var(--purple-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: all .25s; }
+.compare-btn:hover { border-color: var(--accent); color: #fff; background: var(--purple-glass-strong); }
+.compare-table { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.compare-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: var(--purple-surface); font-size: 12px; flex-wrap: wrap; }
+.compare-row.best { border: 1px solid rgba(124,92,252,0.35); background: var(--purple-glass-strong); }
+.cr-alpha { font-weight: 800; color: var(--accent); min-width: 50px; }
+.cr-steps { color: var(--text-primary); min-width: 40px; }
+.cr-avg { color: var(--text-secondary); min-width: 90px; }
+.cr-path { flex: 1; color: var(--text-secondary); font-size: 11px; word-break: break-all; }
+.cr-badge { background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 700; }
+
 @media (max-width: 768px) {
-  .route-planner {
-    padding: 15px;
-  }
-  
-  .summary-item .label,
-  .summary-item .value {
-    font-size: 12px;
-  }
-  
-  .step-item {
-    padding: 10px;
-  }
-  
-  .step-number {
-    width: 24px;
-    height: 24px;
-    font-size: 12px;
-  }
+  .route-planner { padding: 12px; }
+  .summary-item .label, .summary-item .value { font-size: 11px; }
+  .step-item { padding: 8px; }
+  .step-number { width: 22px; height: 22px; font-size: 11px; }
+  .picker-hint { font-size: 10px; }
+  .compare-row { font-size: 10px; padding: 8px 10px; gap: 6px; }
+  .cr-path { font-size: 9px; }
+  .topo-picker :deep(.rg-chart) { height: 280px !important; }
 }
 </style>

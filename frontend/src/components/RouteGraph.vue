@@ -22,7 +22,7 @@ import * as echarts from 'echarts'
 import axios from 'axios'
 import { API_URL } from '../config.js'
 
-const props = defineProps({ venueId: { type: Number, default: 1 }, highlightEdges: { type: Array, default: () => [] } })
+const props = defineProps({ venueId: { type: Number, default: 1 }, highlightEdges: { type: Array, default: () => [] }, compareEdges: { type: Array, default: () => [] } })
 defineEmits(['planRoute'])
 
 const chartRef = ref(null)
@@ -48,6 +48,8 @@ function buildOption(data) {
         label: { show: true, fontSize: 11, color: '#c8c8e0' }
       })),
       edges: (data.edges || []).map(e => {
+        const ce = props.compareEdges.find(c => (c[0] === String(e.source) && c[1] === String(e.target)) || (c[0] === String(e.target) && c[1] === String(e.source)))
+        if (ce) return { source: String(e.source), target: String(e.target), lineStyle: { color: ce[2], width: 3, curveness: 0.15 } }
         const hl = props.highlightEdges.some(h => (String(h[0]) === String(e.source) && String(h[1]) === String(e.target)) || (String(h[0]) === String(e.target) && String(h[1]) === String(e.source)))
         return { source: String(e.source), target: String(e.target), lineStyle: { color: hl ? '#42a5f5' : 'rgba(255,255,255,0.12)', width: hl ? 3 : 1, curveness: 0.1 } }
       }),
@@ -90,6 +92,9 @@ onMounted(async () => {
     chart = echarts.init(chartRef.value)
     chart.on('click', handleClick)
     window.addEventListener('resize', handleResize)
+    const ro = new ResizeObserver(() => { chart?.resize() })
+    ro.observe(chartRef.value)
+    setTimeout(() => chart?.resize(), 150)
     await fetchGraph()
   }
 })
@@ -97,6 +102,7 @@ onMounted(async () => {
 onUnmounted(() => { window.removeEventListener('resize', handleResize); chart?.off('click'); chart?.dispose() })
 watch(() => props.venueId, fetchGraph)
 watch(() => props.highlightEdges, () => { fetchGraph() }, { deep: true })
+watch(() => props.compareEdges, () => { fetchGraph() }, { deep: true })
 </script>
 
 <style scoped>

@@ -168,6 +168,9 @@ function renderChart() {
     chart = echarts.init(chartRef.value)
     chart.setOption(option)
     window.addEventListener('resize', () => chart?.resize())
+    const ro = new ResizeObserver(() => { chart?.resize() })
+    ro.observe(chartRef.value)
+    setTimeout(() => chart?.resize(), 100)
   }
 }
 
@@ -185,7 +188,7 @@ onUnmounted(() => {
 
 <style scoped>
 .predict-container {
-  background: rgba(255,255,255,0.95);
+  background: var(--purple-glass);
   border-radius: 20px;
   padding: 20px;
   margin-bottom: 30px;
@@ -215,7 +218,7 @@ onUnmounted(() => {
   display: flex;
   gap: 20px;
   padding: 10px;
-  background: #f5f5f5;
+  background: var(--purple-surface);
   border-radius: 12px;
   margin-bottom: 15px;
   font-size: 14px;
@@ -230,7 +233,7 @@ onUnmounted(() => {
   gap: 20px;
   margin-top: 15px;
   padding: 10px;
-  background: #f5f5f5;
+  background: var(--purple-surface);
   border-radius: 12px;
   flex-wrap: wrap;
 }

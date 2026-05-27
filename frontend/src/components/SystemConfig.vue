@@ -40,6 +40,22 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="系统工具" name="tools">
+        <div class="glass-card" style="padding:20px">
+          <h4 style="color:#fff;margin-bottom:16px">人流模拟器</h4>
+          <div class="sim-panel">
+            <div class="sim-status-row">
+              <span class="sim-label">模拟器状态</span>
+              <span :class="['sim-dot',simRunning?'on':'off']" />
+              <span :style="{color:simRunning?'var(--green)':'var(--text-secondary)',fontSize:'14px',fontWeight:600}">
+                {{ simRunning ? '运行中' : '已停止' }}
+              </span>
+            </div>
+            <div class="sim-desc">开启后自动向场馆推送模拟人流数据，前端实时显示拥堵变化</div>
+            <el-switch v-model="simRunning" @change="toggleSim" :loading="simLoading" active-text="开启" inactive-text="关闭" size="large" style="--el-switch-on-color:var(--accent)" />
+          </div>
+        </div>
+      </el-tab-pane>
       <el-tab-pane label="系统信息" name="info">
         <div class="glass-card" style="padding:20px">
           <div class="info-grid">
@@ -65,6 +81,10 @@ const lastUpdateTime = ref('--')
 const config = ref({ email_receiver: '', alert_threshold: 80, refresh_interval: 5, data_retention_days: 30, congestion_alpha: 2.0 })
 const pwdForm = ref({ old: '', new1: '', new2: '' })
 const pwdLoading = ref(false)
+const simLoading = ref(false); const simStatus = ref(null); const simRunning = ref(false)
+
+async function checkSimStatus(){try{const r=await axios.get(`${API_URL}/api/simulator/status`);simRunning.value=r.data.running}catch(e){}}
+async function toggleSim(v){simLoading.value=true;if(v){try{await axios.post(`${API_URL}/api/simulator/start`);ElMessage.success('模拟器已启动')}catch(e){simRunning.value=false;ElMessage.error('启动失败')}}else{try{await axios.post(`${API_URL}/api/simulator/stop`);ElMessage.success('模拟器已停止')}catch(e){simRunning.value=true;ElMessage.error('停止失败，请手动终止')}}simLoading.value=false}
 
 async function loadConfig() {
   const keys = ['email_receiver', 'alert_threshold', 'refresh_interval', 'data_retention_days', 'congestion_alpha']
@@ -91,7 +111,7 @@ async function changePassword() {
 async function getLastUpdate() {
   try { const r = await axios.get(`${API_URL}/api/crowd/latest`); if (r.data.length && r.data[0].timestamp) lastUpdateTime.value = new Date(r.data[0].timestamp).toLocaleString() } catch (e) { /* */ }
 }
-onMounted(() => { loadConfig(); getLastUpdate() })
+onMounted(() => { loadConfig(); getLastUpdate(); checkSimStatus() })
 </script>
 
 <style scoped>
@@ -100,12 +120,20 @@ onMounted(() => { loadConfig(); getLastUpdate() })
 .cfg-item { padding: 16px; }
 .cfg-item label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
 .cfg-row { display: flex; gap: 8px; align-items: center; }
-.pwd-card { padding: 20px; }
+.pwd-card { padding: 20px; background: var(--purple-glass) !important; border: 1px solid rgba(140,110,230,0.15) !important; }
 .pwd-card h4 { color: #fff; margin-bottom: 16px; }
 .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.info-item { display: flex; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; font-size: 13px; }
+.info-item { display: flex; justify-content: space-between; padding: 12px; background: var(--purple-surface); border-radius: 10px; font-size: 13px; }
 .info-item span { color: var(--text-secondary); }
 .info-item strong { color: #fff; }
 .info-item .g { color: var(--green); }
+.sim-panel { display: flex; flex-direction: column; gap: 14px; }
+.sim-status-row { display: flex; align-items: center; gap: 10px; }
+.sim-label { font-size: 13px; color: var(--text-secondary); }
+.sim-dot { width: 10px; height: 10px; border-radius: 50%; }
+.sim-dot.on { background: var(--green); box-shadow: 0 0 10px rgba(34,214,122,.4); animation: pulse-dot 1.5s infinite; }
+.sim-dot.off { background: #666; }
+.sim-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)} }
 @media (max-width: 768px) { .cfg-grid { grid-template-columns: 1fr; } }
 </style>

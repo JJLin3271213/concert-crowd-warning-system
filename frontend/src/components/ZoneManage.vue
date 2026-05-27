@@ -1,5 +1,5 @@
 <template>
-  <div class="manage-container">
+  <div class="manage-container panel-purple">
     <h3>📍 分区管理</h3>
     
     <div class="toolbar">

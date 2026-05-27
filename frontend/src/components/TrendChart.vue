@@ -143,6 +143,9 @@ const renderChart = () => {
     chart = echarts.init(chartRef.value)
     chart.setOption(option)
     window.addEventListener('resize', () => chart?.resize())
+    const ro = new ResizeObserver(() => { chart?.resize() })
+    ro.observe(chartRef.value)
+    setTimeout(() => chart?.resize(), 100)
   }
 }
 
@@ -174,7 +177,7 @@ onUnmounted(() => {
 
 <style scoped>
 .trend-container {
-  background: rgba(255,255,255,0.95);
+  background: var(--purple-glass);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 20px;
@@ -192,16 +195,22 @@ onUnmounted(() => {
 
 .trend-header h3 {
   margin: 0;
-  color: #333;
+  color: #fff;
+  font-size: 15px;
 }
 
 .zone-select {
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid #ddd;
-  background: transparent;
-  font-size: 14px;
+  border: 1px solid rgba(100,75,200,0.25);
+  background: var(--purple-surface);
+  color: var(--text-primary);
+  font-size: 13px;
   cursor: pointer;
+}
+.zone-select option {
+  background: #1e1a3c;
+  color: var(--text-primary);
 }
 
 .trend-chart {
@@ -214,7 +223,7 @@ onUnmounted(() => {
   justify-content: space-around;
   margin-top: 15px;
   padding: 10px;
-  background: #f5f5f5;
+  background: var(--purple-surface);
   border-radius: 8px;
   font-size: 14px;
   flex-wrap: wrap;
@@ -222,6 +231,6 @@ onUnmounted(() => {
 }
 
 .trend-info span {
-  color: #333;
+  color: var(--text-primary);
 }
 </style>

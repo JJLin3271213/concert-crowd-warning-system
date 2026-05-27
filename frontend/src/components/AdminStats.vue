@@ -192,12 +192,13 @@ watch(() => props.venueId, async () => {
 .ov-value { font-size: 26px; font-weight: bold; }
 .ov-label { font-size: 11px; opacity: .85; margin-top: 4px; }
 .peak-info {
-  background: #fff3e0; border-left: 4px solid #ff9800;
+  background: var(--purple-glass); border-left: 4px solid var(--accent);
   padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;
+  color: var(--text-primary);
 }
 .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.chart-panel { background: #f9f9f9; border-radius: 12px; padding: 16px; }
-.panel-title { font-weight: bold; font-size: 14px; margin-bottom: 12px; }
+.chart-panel { background: var(--purple-glass); border-radius: 12px; padding: 16px; border: 1px solid rgba(140,110,230,0.12); }
+.panel-title { font-weight: bold; font-size: 14px; margin-bottom: 12px; color: var(--text-primary); }
 .rank-list { display: flex; flex-direction: column; gap: 6px; max-height: 350px; overflow-y: auto; }
 .rank-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .rank-pos { width: 22px; height: 22px; background: #667eea; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; }
@@ -207,11 +208,11 @@ watch(() => props.venueId, async () => {
 .rank-val { width: 38px; font-size: 12px; font-weight: bold; }
 .rank-alerts { font-size: 10px; color: #f44336; }
 .trend-chart { width: 100%; height: 280px; }
-.data-summary { background: #f9f9f9; border-radius: 12px; padding: 16px; }
+.data-summary { background: var(--purple-glass); border: 1px solid rgba(140,110,230,0.12); border-radius: 12px; padding: 16px; }
 .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
-.summary-item { padding: 10px; background: #fff; border-radius: 8px; text-align: center; }
-.s-label { font-size: 11px; color: #999; display: block; }
-.s-value { font-size: 16px; font-weight: bold; color: #333; }
+.summary-item { padding: 10px; background: var(--purple-surface); border-radius: 8px; text-align: center; }
+.s-label { font-size: 11px; color: var(--text-secondary); display: block; }
+.s-value { font-size: 16px; font-weight: bold; color: var(--text-primary); }
 .data-actions { display: flex; gap: 8px; }
 @media (max-width: 768px) {
   .overview-row { grid-template-columns: repeat(3, 1fr); }

@@ -11,6 +11,10 @@
   --glass: rgba(255,255,255,0.08);
   --glass-strong: rgba(255,255,255,0.14);
   --border-glass: rgba(255,255,255,0.10);
+  --purple-glass: rgba(130, 100, 220, 0.12);
+  --purple-glass-strong: rgba(140, 110, 230, 0.22);
+  --purple-light: rgba(145, 120, 225, 0.10);
+  --purple-surface: rgba(135, 110, 215, 0.15);
   --text-primary: #e8e8f0;
   --text-secondary: #9898b8;
   --accent: #7c5cfc;
@@ -106,11 +110,20 @@ body::after {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
 
-/* Element Plus 暗色覆写 */
+/* 浅紫色面板 */
+.panel-purple {
+  background: var(--purple-glass) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(140, 110, 230, 0.15) !important;
+  border-radius: var(--radius);
+}
+
+/* Element Plus 浅紫色覆写 */
 .el-select .el-input__wrapper,
 .el-input__wrapper {
-  background: rgba(255,255,255,0.06) !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
+  background: rgba(140, 115, 225, 0.10) !important;
+  border: 1px solid rgba(100, 75, 200, 0.25) !important;
   border-radius: 10px !important;
   box-shadow: none !important;
 }
@@ -141,17 +154,32 @@ body::after {
   background: var(--accent) !important;
 }
 .el-table {
-  --el-table-bg-color: transparent !important;
-  --el-table-tr-bg-color: transparent !important;
-  --el-table-header-bg-color: rgba(255,255,255,0.04) !important;
-  --el-table-border-color: rgba(255,255,255,0.06) !important;
+  --el-table-bg-color: rgba(140, 115, 225, 0.06) !important;
+  --el-table-tr-bg-color: rgba(140, 115, 225, 0.04) !important;
+  --el-table-header-bg-color: rgba(140, 115, 225, 0.10) !important;
+  --el-table-border-color: rgba(140, 110, 230, 0.10) !important;
   --el-table-text-color: var(--text-primary) !important;
   --el-table-header-text-color: var(--text-secondary) !important;
+  --el-table-row-hover-bg-color: rgba(140, 115, 225, 0.12) !important;
 }
-.el-table th.el-table__cell { background: rgba(255,255,255,0.04) !important; }
+.el-table th.el-table__cell { background: rgba(140, 115, 225, 0.10) !important; }
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell { background: rgba(140, 115, 225, 0.05) !important; }
 .el-button--primary { --el-button-bg-color: var(--accent); --el-button-border-color: var(--accent); }
-.el-dialog { border-radius: 18px !important; }
-.el-dialog__header { background: linear-gradient(135deg, rgba(124,92,252,0.2), rgba(66,165,245,0.1)); border-radius: 18px 18px 0 0; padding: 18px 24px; }
+.el-dialog { border-radius: 18px !important; background: rgba(30, 25, 60, 0.95) !important; }
+.el-dialog__header { background: linear-gradient(135deg, rgba(124,92,252,0.2), rgba(140,110,230,0.1)); border-radius: 18px 18px 0 0; padding: 18px 24px; }
+.el-form-item__label { color: var(--text-secondary) !important; }
+.el-descriptions { --el-descriptions-item-bordered-label-background: rgba(140, 115, 225, 0.08) !important; }
+.el-descriptions__body .el-descriptions__table .el-descriptions__cell { background: rgba(140, 115, 225, 0.04) !important; border-color: rgba(140, 110, 230, 0.10) !important; }
+.el-divider { border-color: rgba(140, 110, 230, 0.15) !important; }
+.el-pagination .el-pager li { background: rgba(140, 115, 225, 0.08) !important; color: var(--text-secondary) !important; }
+.el-pagination .el-pager li.is-active { background: var(--accent) !important; color: #fff !important; }
+.dark-drop { background: #1a1a35 !important; border: 1px solid rgba(100,75,200,0.25) !important; }
+.dark-drop .el-select-dropdown__item { color: #c8c8e0 !important; }
+.dark-drop .el-select-dropdown__item.hover,
+.dark-drop .el-select-dropdown__item:hover { background: rgba(124,92,252,0.2) !important; }
+.dark-drop .el-select-dropdown__item.selected { color: #fff !important; background: rgba(124,92,252,0.3) !important; }
+.el-textarea__inner { background: rgba(140,115,225,0.10) !important; border-color: rgba(100,75,200,0.25) !important; color: var(--text-primary) !important; }
+.el-popper.is-dark { background: #1a1a35 !important; color: #fff !important; }
 
 @media (max-width: 768px) {
   :root { --radius: 14px; --radius-sm: 8px; }

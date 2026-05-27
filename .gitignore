@@ -1,0 +1,15 @@
+# Local Netlify folder
+.netlify
+
+# Python
+__pycache__/
+venv/
+*.pyc
+*.pyo
+
+# Database
+concert.db
+*.db
+
+# Environment
+.env

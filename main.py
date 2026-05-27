@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List
 
 from database import get_db
-from models import CrowdData, Zone, Venue, RoadNetwork, User, Performance, EmergencyPoint, SystemConfig, EmergencyHelp
+from models import CrowdData, Zone, Venue, RoadNetwork, User, Performance, EmergencyPoint, SystemConfig, EmergencyHelp, Alert
 from schemas import CrowdDataCreate
 from auth import authenticate_user, create_access_token, get_current_user
 
@@ -285,6 +285,8 @@ def get_latest_crowd(venue_id: int = 1, db: Session = Depends(get_db)):
                 from notify import check_and_send_alert
                 check_and_send_alert(zone.id, zone.name, round(congestion_rate * 100), latest.current_count, zone.capacity, venue_name)
             
+            evac_time = round(latest.current_count / 60, 1)
+            actions = {"green":"自由通行","yellow":"加强巡逻，关注人流变化","orange":"限流引导，扩音提醒绕行","red":"启动预案，封闭入口，全员疏散"}
             result.append({
                 "zone_id": zone.id,
                 "zone_name": zone.name,
@@ -292,6 +294,8 @@ def get_latest_crowd(venue_id: int = 1, db: Session = Depends(get_db)):
                 "capacity": zone.capacity,
                 "congestion_rate": round(congestion_rate * 100),
                 "level": level,
+                "evacuation_minutes": evac_time,
+                "action": actions[level],
                 "timestamp": latest.timestamp
             })
     return result
@@ -606,6 +610,46 @@ def plan_route(start: int, end: int, venue_id: int = 1, db: Session = Depends(ge
         "avg_congestion": avg_congestion,
         "is_congested": is_congested
     }
+
+
+@app.get("/api/route/compare", tags=["路线规划"])
+def compare_routes(start: int, end: int, venue_id: int = 1, db: Session = Depends(get_db)):
+    """对比 α=1.5, 2.0, 3.0 三条路径"""
+    from route import get_route_graph, get_node_names, dijkstra, calculate_congestion_weight
+    from sqlalchemy import desc
+
+    graph = get_route_graph(db, venue_id)
+    node_names = get_node_names(db, venue_id)
+    if start not in node_names or end not in node_names:
+        return {"error": "无效的起点或终点"}
+
+    zones = db.query(Zone).filter(Zone.venue_id == venue_id).all()
+    latest_data = {}
+    for zone in zones:
+        latest = db.query(CrowdData).filter(CrowdData.zone_id == zone.id).order_by(desc(CrowdData.timestamp)).first()
+        if latest and zone.capacity > 0:
+            latest_data[zone.id] = {"congestion_rate": round(latest.current_count / zone.capacity * 100)}
+
+    results = []
+    for alpha in [1.5, 2.0, 3.0]:
+        weights = {}
+        for node_id in graph.keys():
+            if node_id in latest_data:
+                weights[node_id] = calculate_congestion_weight(node_id, latest_data, alpha)
+        path = dijkstra(graph, start, end, weights)
+        path_names = [node_names.get(n, f"未知{n}") for n in path] if path else []
+        avg_cong = 0
+        if path and len(path) > 1:
+            rates = [latest_data.get(n, {}).get("congestion_rate", 0) for n in path[1:]]
+            avg_cong = round(sum(rates) / len(rates), 1) if rates else 0
+        results.append({
+            "alpha": alpha,
+            "steps": len(path) - 1 if path else 0,
+            "path_names": path_names,
+            "avg_congestion": avg_cong,
+            "found": len(path) > 1
+        })
+    return {"start_name": node_names.get(start, ""), "end_name": node_names.get(end, ""), "results": results}
 
 
 @app.get("/api/route/nodes", tags=["路线规划"])
@@ -980,8 +1024,24 @@ def set_config(key: str, value: str, description: str = "", db: Session = Depend
 
 
 # ========== 人流预测功能 ==========
+@app.get("/api/predict/all", tags=["人流预测"])
+def predict_all_zones(minutes_ahead: int = 10, venue_id: int = 1, db: Session = Depends(get_db)):
+    """预测所有分区（必须在 /api/predict/{zone_id} 之前注册，避免路由冲突）"""
+    zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
+    results = []
+    for zone in zones:
+        pred = _predict_zone(zone.id, minutes_ahead, venue_id, db)
+        if "error" not in pred:
+            results.append(pred)
+    return results
+
+
 @app.get("/api/predict/{zone_id}", tags=["人流预测"])
 def predict_crowd(zone_id: int, minutes_ahead: int = 10, venue_id: int = 1, db: Session = Depends(get_db)):
+    return _predict_zone(zone_id, minutes_ahead, venue_id, db)
+
+
+def _predict_zone(zone_id: int, minutes_ahead: int, venue_id: int, db: Session):
     from sqlalchemy import desc
     from datetime import datetime, timedelta
     
@@ -1026,15 +1086,41 @@ def predict_crowd(zone_id: int, minutes_ahead: int = 10, venue_id: int = 1, db: 
     }
 
 
-@app.get("/api/predict/all", tags=["人流预测"])
-def predict_all_zones(minutes_ahead: int = 10, venue_id: int = 1, db: Session = Depends(get_db)):
-    zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
-    results = []
-    for zone in zones:
-        pred = predict_crowd(zone.id, minutes_ahead, venue_id, db)
-        if "error" not in pred:
-            results.append(pred)
-    return results
+# ========== 模拟器控制 ==========
+import subprocess, threading
+
+simulator_process = None
+
+@app.post("/api/simulator/start", tags=["系统"])
+def start_simulator():
+    global simulator_process
+    if simulator_process and simulator_process.poll() is None:
+        return {"message": "模拟器已在运行中", "running": True}
+    def run():
+        global simulator_process
+        import os
+        simulator_process = subprocess.Popen(
+            ["python", "simulator_v2.py"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    threading.Thread(target=run, daemon=True).start()
+    return {"message": "模拟器已启动", "running": True}
+
+@app.get("/api/simulator/status", tags=["系统"])
+def simulator_status():
+    global simulator_process
+    running = simulator_process is not None and simulator_process.poll() is None
+    return {"running": running}
+
+@app.post("/api/simulator/stop", tags=["系统"])
+def stop_simulator():
+    global simulator_process
+    if simulator_process and simulator_process.poll() is None:
+        simulator_process.terminate()
+        simulator_process = None
+        return {"message": "模拟器已停止", "running": False}
+    return {"message": "模拟器未在运行", "running": False}
 
 
 # ========== 路网可视化 ==========
@@ -1103,11 +1189,11 @@ def get_stats_overview(venue_id: int = 1, db: Session = Depends(get_db)):
     zones = db.query(Zone).filter(Zone.venue_id == venue_id, Zone.capacity > 0).all()
     zone_ids = [z.id for z in zones]
 
-    total_crowd = db.query(func.sum(CrowdData.current_count)).filter(
-        CrowdData.zone_id.in_(zone_ids)
-    ).order_by(desc_order(CrowdData.timestamp)).limit(len(zone_ids)).all()
-
-    latest_total = sum(r[0] for r in total_crowd if r[0]) if total_crowd else 0
+    # 取每个分区最新一条数据求和
+    latest_total = 0
+    for zid in zone_ids:
+        row = db.query(CrowdData.current_count).filter(CrowdData.zone_id == zid).order_by(desc_order(CrowdData.timestamp)).first()
+        if row: latest_total += row[0]
     total_capacity = sum(z.capacity for z in zones)
 
     total_alerts = db.query(func.count(Alert.id)).filter(Alert.zone_id.in_(zone_ids)).scalar() or 0

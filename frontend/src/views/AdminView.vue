@@ -2,10 +2,14 @@
   <div class="admin-app">
     <header class="admin-header glass-card">
       <div class="h-left">
-        <div class="logo-dot" />
+        <div class="logo-dot">林</div>
         <div><strong>Concert Flow</strong><small>管理控制台</small></div>
       </div>
       <div class="h-right">
+        <MusicPlayer />
+        <el-select v-model="adminVenueId" size="small" style="width:160px" popper-class="dark-drop">
+          <el-option v-for="v in venueList" :key="v.id" :label="v.name" :value="v.id" />
+        </el-select>
         <span class="h-badge">{{ venueCount }}场馆 · {{ zoneCount }}分区 · {{ roadCount }}路网</span>
         <el-button class="ghost-sm" @click="logout">退出</el-button>
       </div>
@@ -17,7 +21,7 @@
 
     <div class="admin-body">
       <RealTimeMonitor v-show="activeTab==='monitor'" />
-      <AdminStats v-show="activeTab==='stats'" :venue-id="1" />
+      <AdminStats v-show="activeTab==='stats'" :venue-id="adminVenueId" />
       <div v-show="activeTab==='topology'" class="glass-card" style="padding:20px">
         <RouteGraph :venue-id="1" :highlight-edges="[]" />
         <div style="display:flex;gap:12px;align-items:center;margin-top:14px">
@@ -49,6 +53,7 @@ import ZoneManage from '../components/ZoneManage.vue'
 import RoadNetworkManage from '../components/RoadNetworkManage.vue'
 import EmergencyManage from '../components/EmergencyManage.vue'
 import SystemConfig from '../components/SystemConfig.vue'
+import MusicPlayer from '../components/MusicPlayer.vue'
 import { API_URL } from '../config.js'
 
 const router = useRouter()
@@ -59,6 +64,9 @@ const tabs = [
   {key:'road',label:'路网'},{key:'emergency',label:'应急'},{key:'config',label:'配置'}
 ]
 const venueCount=ref(0);const zoneCount=ref(0);const roadCount=ref(0);const emergencyCount=ref(0)
+const adminVenueId=ref(1);const venueList=ref([])
+
+async function fetchVenueList(){try{const r=await axios.get(`${API_URL}/api/venues`);venueList.value=r.data}catch(e){}}
 const checkingConn=ref(false);const connResult=ref(null)
 
 async function fetchStats(){
@@ -66,14 +74,14 @@ async function fetchStats(){
 }
 async function checkConnectivity(){checkingConn.value=true;connResult.value=null;try{const r=await axios.get(`${API_URL}/api/road/check-connectivity`);connResult.value=r.data;ElMessage[r.data.connected?'success':'warning'](r.data.message)}catch(e){ElMessage.error('校验失败')}finally{checkingConn.value=false}}
 function logout(){localStorage.removeItem('token');ElMessage.success('已退出');router.push('/')}
-onMounted(()=>fetchStats())
+onMounted(()=>{fetchStats();fetchVenueList()})
 </script>
 
 <style scoped>
 .admin-app { max-width: 1400px; margin: 0 auto; padding: 16px; min-height: 100vh; }
 .admin-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; margin-bottom: 16px; }
 .h-left { display: flex; align-items: center; gap: 10px; }
-.logo-dot { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg,var(--accent),#a855f7); box-shadow: 0 0 15px var(--accent-glow); }
+.logo-dot { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg,var(--accent),#a855f7); box-shadow: 0 0 15px var(--accent-glow); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:16px; color:#fff; }
 .h-left strong { font-size: 15px; color: #fff; display: block; }
 .h-left small { font-size: 10px; color: var(--text-secondary); }
 .h-right { display: flex; align-items: center; gap: 12px; }

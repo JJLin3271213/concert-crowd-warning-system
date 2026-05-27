@@ -1,15 +1,27 @@
 <template>
   <div class="user-app">
+    <!-- 背景装饰图 -->
+    <div class="bg-decorations">
+      <img src="/用户端左上.jpg" class="bg-img tl" alt="" />
+      <img src="/用户端右上.jpg" class="bg-img tr" alt="" />
+      <img src="/用户端中左.jpg" class="bg-img ml" alt="" />
+      <img src="/用户端中右.jpg" class="bg-img mr" alt="" />
+      <img src="/用户端左下.jpg" class="bg-img bl" alt="" />
+      <img src="/用户端右下.jpg" class="bg-img br" alt="" />
+    </div>
     <!-- 头部 -->
     <header class="header glass-card">
       <div class="logo-area">
-        <div class="logo-ring"><span>M</span></div>
+        <div class="logo-ring"><span>林</span></div>
         <div>
           <h1>Concert Flow</h1>
           <p>智能人流预警系统</p>
         </div>
       </div>
       <div class="header-right">
+        <MusicPlayer />
+        <el-switch v-model="demoMode" active-text="演示" @change="toggleDemo" size="small" style="--el-switch-on-color:var(--accent)" />
+        <el-button class="qr-btn" size="small" @click="showQR=true">扫码</el-button>
         <div class="venue-pill">
           <el-select v-model="currentVenueId" @change="switchVenue" popper-class="dark-drop">
             <el-option v-for="v in venues" :key="v.id" :label="v.name" :value="v.id" />
@@ -45,13 +57,27 @@
 
     <!-- 导航tab -->
     <div class="nav-tabs">
-      <button :class="{active:activeTab==='zones'}" @click="activeTab='zones'">分区状态</button>
-      <button :class="{active:activeTab==='charts'}" @click="activeTab='charts'">数据分析</button>
-      <button :class="{active:activeTab==='route'}" @click="activeTab='route'">路线规划</button>
+      <button :class="{active:activeTab==='overview'}" @click="activeTab='overview'">总览</button>
+      <button :class="{active:activeTab==='zones'}" @click="activeTab='zones'">分区</button>
+      <button :class="{active:activeTab==='charts'}" @click="activeTab='charts'">数据</button>
+      <button :class="{active:activeTab==='route'}" @click="activeTab='route'">路线</button>
       <button :class="{active:activeTab==='help'}" @click="activeTab='help'">应急</button>
     </div>
 
     <!-- 分区状态 -->
+    <!-- 全场馆总览 -->
+    <section v-show="activeTab==='overview'" class="overview-section">
+      <div v-for="v in allVenueData" :key="v.id" class="glass-card venue-summary" @click="currentVenueId=v.id;activeTab='zones';refresh();fetchPerformances()" style="cursor:pointer">
+        <div class="vs-header"><strong>{{ v.name }}</strong><span :class="['vs-badge',v.worstLevel]">{{ v.worstLevel==='red'?'严重':v.worstLevel==='orange'?'拥堵':v.worstLevel==='yellow'?'较堵':'畅通' }}</span></div>
+        <div class="vs-stats">
+          <span>{{ v.totalPeople }}人 / {{ v.totalCap }}人</span>
+          <span>拥挤度 {{ v.avgRate }}%</span>
+          <span>{{ v.alertCount }}个预警分区</span>
+        </div>
+        <div class="vs-bar"><div :style="{width:v.avgRate+'%',background:levelColor(v.worstLevel)}" /></div>
+      </div>
+    </section>
+
     <section v-show="activeTab==='zones'">
       <div class="zone-grid">
         <div v-for="z in zones" :key="z.zone_id" :class="['zone-card','glass-card',z.level]">
@@ -61,9 +87,16 @@
             <span :class="['badge',z.level]">{{ levelText(z.level) }}</span>
           </div>
           <div class="zone-body">
-            <span class="zone-count">{{ z.current_count }}<small> / {{ z.capacity }}</small></span>
+            <span class="zone-count">{{ z.current_count }}<small> / {{ z.capacity }}</small>
+              <span v-if="getTrend(z.zone_id)===1" class="trend-up">↑</span>
+              <span v-else-if="getTrend(z.zone_id)===-1" class="trend-down">↓</span>
+            </span>
             <div class="zone-bar"><div :class="['zone-fill',z.level]" :style="{width:z.congestion_rate+'%'}" /></div>
             <span class="zone-rate">{{ z.congestion_rate }}%</span>
+          </div>
+          <div class="zone-footer-info">
+            <span class="zfi-evac">预计疏散 {{ z.evacuation_minutes }}分钟</span>
+            <span class="zfi-action">{{ z.action }}</span>
           </div>
         </div>
       </div>
@@ -77,7 +110,7 @@
     </section>
 
     <!-- 路线 -->
-    <section v-show="activeTab==='route'" class="glass-card" style="padding:20px">
+    <section v-show="activeTab==='route'" class="glass-card panel-purple" style="padding:20px">
       <RoutePlanner :venue-id="currentVenueId" />
     </section>
 
@@ -118,6 +151,15 @@
         <el-button type="primary" @click="handleLogin">登录</el-button>
       </template>
     </el-dialog>
+
+    <!-- 二维码弹窗 -->
+    <el-dialog v-model="showQR" title="扫码进入系统" width="340px" center>
+      <div style="text-align:center;padding:10px 0">
+        <img :src="qrUrl" style="width:200px;height:200px;border-radius:12px;background:#fff;padding:8px" @error="qrError=true" />
+        <p v-if="qrError" style="color:var(--red);font-size:12px;margin-top:10px">二维码加载失败，请检查网络</p>
+        <p v-else style="color:var(--text-secondary);font-size:12px;margin-top:10px">扫描二维码直接进入人流预警系统</p>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -130,6 +172,8 @@ import Heatmap from '../components/Heatmap.vue'
 import TrendChart from '../components/TrendChart.vue'
 import RoutePlanner from '../components/RoutePlanner.vue'
 import PredictChart from '../components/PredictChart.vue'
+import MusicPlayer from '../components/MusicPlayer.vue'
+import { cachedFetch } from '../cache.js'
 import { API_URL } from '../config.js'
 
 const router = useRouter()
@@ -140,13 +184,28 @@ const currentVenueId = ref(1)
 const performances = ref([])
 const isLoggedIn = ref(false)
 const showLoginDialog = ref(false)
-const loginForm = ref({ username: 'admin', password: 'admin123' })
+const loginForm = ref({ username: '林俊杰', password: '03271307' })
 let timer = null
+const demoMode = ref(false); let demoTimer = null
+const showQR = ref(false); const qrError = ref(false)
+const qrUrl = computed(()=>{qrError.value=false;return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.href)}`})
+
+function toggleDemo(v){if(v){startDemo()}else{stopDemo()}}
+function startDemo(){demoMode.value=true;let step=0;demoTimer=setInterval(()=>{step++;if(step%3===0){const vi=venues.value;if(vi.length){const idx=vi.findIndex(v=>v.id===currentVenueId.value);const next=vi[(idx+1)%vi.length];if(next)switchVenue(next.id)}}if(step%3===1)activeTab.value='charts';if(step%3===2)activeTab.value='zones'},8000)}
+function stopDemo(){demoMode.value=false;if(demoTimer){clearInterval(demoTimer);demoTimer=null}}
 
 const totalCount = computed(() => zones.value.reduce((s,z)=>s+z.current_count,0))
 const totalCapacity = computed(() => zones.value.reduce((s,z)=>s+z.capacity,0))
 const overallRate = computed(()=>totalCapacity.value?Math.round(totalCount.value/totalCapacity.value*100):0)
 const alertZones = computed(()=>zones.value.filter(z=>z.level!=='green').length)
+
+function levelColor(l){return{green:'#22d67a',yellow:'#f5c842',orange:'#ff8c42',red:'#ff4d5a'}[l]||'#999'}
+
+const allVenueData = ref([])
+async function fetchAllVenueOverview(){try{const vs=await axios.get(`${API_URL}/api/venues`);const data=[];for(const v of vs.data){const r=await axios.get(`${API_URL}/api/crowd/latest?venue_id=${v.id}`);const zones=r.data;if(!zones.length)continue;const tp=zones.reduce((s,z)=>s+z.current_count,0);const tc=zones.reduce((s,z)=>s+z.capacity,0);const ar=Math.round(tp/tc*100);const ac=zones.filter(z=>z.level!=='green').length;const wl=zones.some(z=>z.level==='red')?'red':zones.some(z=>z.level==='orange')?'orange':zones.some(z=>z.level==='yellow')?'yellow':'green';data.push({id:v.id,name:v.name,totalPeople:tp,totalCap:tc,avgRate:ar,alertCount:ac,worstLevel:wl})}allVenueData.value=data}catch(e){}}
+
+const prevCounts = ref({})
+function getTrend(zoneId){const prev=prevCounts.value[zoneId];const cur=zones.value.find(z=>z.zone_id===zoneId)?.current_count;if(prev===undefined||cur===undefined)return 0;return cur>prev?1:cur<prev?-1:0}
 
 const helpZoneId = ref(null)
 const helpMessage = ref('')
@@ -159,7 +218,7 @@ const nearbyPoints = ref([])
 
 function levelText(l){return {green:'畅通',yellow:'较堵',orange:'拥堵',red:'严重'}[l]||l}
 
-async function refresh(){try{const r=await axios.get(`${API_URL}/api/crowd/latest`,{params:{venue_id:currentVenueId.value}});zones.value=r.data}catch(e){}}
+async function refresh(){try{const url=`${API_URL}/api/crowd/latest?venue_id=${currentVenueId.value}`;const newData=await cachedFetch(url,8000);newData.forEach(z=>{prevCounts.value[z.zone_id]=zones.value.find(o=>o.zone_id===z.zone_id)?.current_count});zones.value=newData}catch(e){console.warn('数据加载失败')}}
 async function fetchVenues(){try{const r=await axios.get(`${API_URL}/api/venues`);venues.value=r.data;if(venues.value.length)currentVenueId.value=venues.value[0].id}catch(e){}}
 async function fetchPerformances(){try{const r=await axios.get(`${API_URL}/api/performances`,{params:{venue_id:currentVenueId.value}});performances.value=r.data}catch(e){}}
 async function switchVenue(id){currentVenueId.value=id;await refresh();await fetchPerformances();await fetchNearby()}
@@ -175,7 +234,7 @@ async function sendHelp(){
 async function pollStatus(id){try{const r=await axios.get(`${API_URL}/api/emergency/help/${id}/status`);if(r.data.status==='confirmed'){helpStatusText.value='管理员已确认，工作人员正赶往现场！';if(helpResult.value)helpResult.value.status='confirmed';if(helpPoll){clearInterval(helpPoll);helpPoll=null}}}catch(e){}}
 async function fetchNearby(){if(!helpZoneId.value)return;try{const r=await axios.get(`${API_URL}/api/emergency/nearby`,{params:{zone_id:helpZoneId.value||zones.value[0]?.zone_id,venue_id:currentVenueId.value}});nearbyPoints.value=r.data}catch(e){}}
 
-onMounted(()=>{checkLogin();fetchVenues();refresh();fetchPerformances();timer=setInterval(refresh,5000);fetchNearby()})
+onMounted(()=>{checkLogin();fetchVenues();refresh();fetchPerformances();fetchAllVenueOverview();timer=setInterval(refresh,5000);fetchNearby()})
 onUnmounted(()=>{if(timer)clearInterval(timer);if(helpPoll)clearInterval(helpPoll)})
 watch(helpZoneId,()=>fetchNearby())
 </script>
@@ -193,6 +252,7 @@ watch(helpZoneId,()=>fetchNearby())
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: pulse-dot 1.2s infinite; }
 @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(1.5)} }
 .ghost-btn { background: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.12) !important; color: var(--text-secondary) !important; border-radius: 20px !important; font-size: 12px !important; }
+.qr-btn { background: var(--purple-surface) !important; border: 1px solid rgba(140,110,230,0.25) !important; color: var(--text-secondary) !important; border-radius: 20px !important; font-size: 12px !important; }
 
 .stat-bar { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
 .stat-item { padding: 16px; display: flex; align-items: center; gap: 14px; }
@@ -228,6 +288,8 @@ watch(helpZoneId,()=>fetchNearby())
 .zone-body { display: flex; align-items: center; gap: 8px; }
 .zone-count { font-size: 22px; font-weight: 800; color: #fff; min-width: 90px; }
 .zone-count small { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+.trend-up { color: var(--red); font-size: 14px; margin-left: 4px; animation: pulse-dot 1s infinite; }
+.trend-down { color: var(--green); font-size: 14px; margin-left: 4px; }
 .zone-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
 .zone-fill { height: 100%; border-radius: 3px; transition: width .6s; }
 .zone-fill.green { background: var(--green); }
@@ -236,14 +298,32 @@ watch(helpZoneId,()=>fetchNearby())
 .zone-fill.red { background: var(--red); animation: pulse-bar 1s infinite; }
 @keyframes pulse-bar { 0%,100%{opacity:1}50%{opacity:.5} }
 .zone-rate { font-size: 12px; font-weight: 700; color: var(--text-secondary); min-width: 38px; text-align: right; }
+.zone-footer-info { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 11px; }
+.zfi-evac { color: var(--text-secondary); }
+.zfi-action { color: var(--accent); font-weight: 600; }
 
 .charts-section { display: flex; flex-direction: column; gap: 16px; }
-.chart-wrap { padding: 20px; }
+.chart-wrap { padding: 20px; background: var(--purple-glass) !important; border: 1px solid rgba(140,110,230,0.12) !important; }
+
+.overview-section { display: flex; flex-direction: column; gap: 14px; }
+.venue-summary { padding: 18px; transition: all .3s; }
+.venue-summary:hover { background: var(--purple-glass-strong); transform: translateY(-2px); }
+.vs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.vs-header strong { font-size: 16px; color: #fff; }
+.vs-badge { padding: 3px 10px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+.vs-badge.green { background: rgba(34,214,122,.15); color: #22d67a; }
+.vs-badge.yellow { background: rgba(245,200,66,.15); color: #f5c842; }
+.vs-badge.orange { background: rgba(255,140,66,.15); color: #ff8c42; }
+.vs-badge.red { background: rgba(255,77,90,.15); color: #ff4d5a; }
+.vs-stats { display: flex; gap: 20px; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; flex-wrap: wrap; }
+.vs-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+.vs-bar div { height: 100%; border-radius: 3px; transition: width .6s; }
 
 .help-section { display: flex; flex-direction: column; gap: 16px; }
 .help-card { padding: 20px; }
 .help-card h3, .nearby-panel h3 { margin-bottom: 14px; font-size: 16px; color: #fff; }
 .w-full { width: 100%; margin-bottom: 12px; }
+.nearby-panel { padding: 18px; }
 .sos-btn { width: 100%; height: 46px; font-size: 15px; font-weight: 700; margin-top: 8px; background: linear-gradient(135deg, #ff4d5a, #e91e63) !important; border: none !important; border-radius: 12px !important; }
 .help-result { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px; margin-top: 12px; border-radius: 12px; }
 .help-result.pending { background: rgba(255,140,66,.1); border: 1px solid rgba(255,140,66,.3); }
@@ -257,8 +337,34 @@ watch(helpZoneId,()=>fetchNearby())
 .nearby-row strong { display: block; font-size: 13px; color: #fff; }
 .nearby-row small { font-size: 11px; color: var(--text-secondary); }
 
+/* 背景装饰图 */
+.bg-decorations { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.bg-img { position: absolute; opacity: 0.80; transition: opacity 0.8s; object-fit: cover; animation: float-bg 6s ease-in-out infinite; }
+.bg-img:hover { opacity: 0.95; }
+.bg-img:nth-child(odd) { animation-duration: 7s; animation-delay: -2s; }
+.bg-img:nth-child(even) { animation-duration: 5.5s; animation-delay: -1s; }
+@keyframes float-bg {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(4px, -6px) rotate(0.5deg); }
+  50% { transform: translate(-3px, 4px) rotate(-0.3deg); }
+  75% { transform: translate(-5px, -3px) rotate(0.4deg); }
+}
+.bg-img.tl { top: 20px; left: 20px; width: 360px; height: 270px; border-radius: 16px; }
+.bg-img.tr { top: 20px; right: 20px; width: 360px; height: 270px; border-radius: 16px; }
+.bg-img.ml { top: calc(50% - 150px); left: 15px; width: 375px; height: 300px; border-radius: 14px; }
+.bg-img.mr { top: calc(50% - 150px); right: 15px; width: 375px; height: 300px; border-radius: 14px; }
+.bg-img.bl { bottom: 20px; left: 20px; width: 360px; height: 255px; border-radius: 16px; }
+.bg-img.br { bottom: 20px; right: 20px; width: 360px; height: 255px; border-radius: 16px; object-position: 10% center; }
+
 @media (max-width: 768px) {
   .user-app { padding: 10px 10px 110px; }
+  .bg-img { width: 150px !important; height: 120px !important; opacity: 0.08; }
+  .bg-img.tl { top: 5px; left: 5px; }
+  .bg-img.tr { top: 5px; right: 5px; }
+  .bg-img.ml { top: 50%; left: 3px; width: 140px !important; height: 110px !important; transform: translateY(-50%); }
+  .bg-img.mr { top: 50%; right: 3px; width: 140px !important; height: 110px !important; transform: translateY(-50%); }
+  .bg-img.bl { bottom: 5px; left: 5px; }
+  .bg-img.br { bottom: 5px; right: 5px; }
   .stat-bar { grid-template-columns: repeat(3,1fr); gap: 8px; }
   .stat-icon-box { width: 40px; height: 40px; font-size: 16px; border-radius: 10px; }
   .stat-item { padding: 10px; gap: 10px; }

@@ -138,11 +138,14 @@ def input_listener():
     while running:
         try:
             cmd = sys.stdin.readline().strip().lower()
+            if not cmd:
+                time.sleep(0.5)
+                continue
         except (EOFError, KeyboardInterrupt):
-            running = False
-            break
+            time.sleep(0.5)
+            continue
 
-        if cmd == '' or cmd == ' ':
+        if cmd == ' ':
             paused = not paused
             print(f"\n>>> {'[已暂停]' if paused else '[继续运行]'}")
         elif cmd == 'r':
@@ -179,7 +182,7 @@ def run_simulator():
     global running, paused, minute
 
     print("=" * 56)
-    print("  演唱会人流数据模拟器 v2.0")
+    print("  演唱会人流数据模拟器 v2.1")
     print("  三段式模型: 入场(0-30min) → 演出(30-90min) → 散场(90-120min)")
     print(f"  后端: {API_URL}")
     print("=" * 56)
@@ -189,9 +192,14 @@ def run_simulator():
         print("无法获取分区数据，请确保后端已启动")
         return
 
-    print(f"  已加载 {len(zones)} 个分区")
+    # 按场馆分组显示
+    venue_groups = {}
     for z in zones:
-        print(f"    {z['venue_name']} / {z['name']} (容量:{z['capacity']})")
+        venue_groups.setdefault(z['venue_name'], []).append(z)
+    for vname, zlist in venue_groups.items():
+        total_cap = sum(z['capacity'] for z in zlist)
+        print(f"  {vname}: {len(zlist)}个分区, 总容量{total_cap}人")
+    print(f"  合计: {len(venue_groups)}个场馆, {len(zones)}个分区")
 
     t = threading.Thread(target=input_listener, daemon=True)
     t.start()

@@ -1,5 +1,5 @@
 <template>
-  <div class="manage-container">
+  <div class="manage-container panel-purple">
     <el-tabs v-model="activeTab">
       <el-tab-pane label="应急点位" name="points">
         <div class="toolbar">

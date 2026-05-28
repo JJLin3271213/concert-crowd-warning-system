@@ -1,5 +1,8 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List
@@ -1376,3 +1379,21 @@ def get_data_stats(db: Session = Depends(get_db)):
         "oldest_record": oldest.strftime("%Y-%m-%d %H:%M:%S") if oldest else "无数据",
         "estimated_db_size_mb": round(total_crowd * 0.05 / 1024, 2)
     }
+
+
+# ========== 前端静态文件服务（前后端同域部署） ==========
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+
+if os.path.exists(FRONTEND_DIR):
+    # 挂载 assets 目录（JS/CSS 等构建产物）
+    assets_dir = os.path.join(FRONTEND_DIR, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # SPA 回退：未匹配的路径返回 index.html 或对应静态文件
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))

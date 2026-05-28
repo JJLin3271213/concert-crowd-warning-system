@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
@@ -8,7 +9,7 @@ from database import get_db
 from models import User
 
 # 配置
-SECRET_KEY = "your-secret-key-2026-concert-system"
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "your-secret-key-2026-concert-system")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
 

@@ -1,3 +1,4 @@
+import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -25,12 +26,12 @@ def _send_and_save(zone_id, zone_name, congestion_rate, current_count, capacity,
     send_alert_email(zone_name, congestion_rate, current_count, capacity, venue_name)
     _save_alert_to_db(zone_id, zone_name, congestion_rate, current_count, capacity, venue_name)
 
-# 邮件配置
-SMTP_SERVER = "smtp.qq.com"
-SMTP_PORT = 587  # 改用 587 端口
-SENDER_EMAIL = "2531458938@qq.com"
-SENDER_PASSWORD = "olifyasznblfdjgj"  # 你的授权码
-RECEIVER_EMAIL = "2531458938@qq.com"
+# 邮件配置（生产环境通过环境变量覆盖）
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.qq.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "2531458938@qq.com")
+SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD", "olifyasznblfdjgj")
+RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL", "2531458938@qq.com")
 
 def send_alert_email(zone_name, congestion_rate, current_count, capacity, venue_name=None, custom_message=None):
     """发送拥堵预警邮件或自定义消息"""

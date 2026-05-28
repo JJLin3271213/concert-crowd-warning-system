@@ -217,6 +217,9 @@ def init_database_cloud():
 
 @app.get("/", tags=["系统"])
 def root():
+    frontend_index = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist", "index.html")
+    if os.path.exists(frontend_index):
+        return FileResponse(frontend_index)
     return {"message": "演唱会人流预警系统运行中", "version": "1.0.0"}
 
 
